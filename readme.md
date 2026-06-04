@@ -7,6 +7,39 @@ A plan to build an **internal Slack assistant** that answers questions about:
 
 The system keeps a **searchable catalog in Postgres** (a normal database) and uses **Google Gemini** to read contracts once and to write answers—but we are **not training a custom AI model**. When new files or rows appear, we **refresh the catalog**; that is not “training.”
 
+Slack today: our existing bot is **ian-bot** (Drive alerts and related messages). Contract Q&A and payment linking may live on **ian-bot** (extended) or on a **new** Slack app—we have not decided yet (see below).
+
+---
+
+## Finance sheet: new `contract_ref` column
+
+The finance Google Sheet already has payment fields (date, amount, payee, etc.). We will add a **new column** called **`contract_ref`**.
+
+| What | Explanation |
+|------|-------------|
+| **What it holds** | A link to the signed contract in Drive (URL), or the Drive **file ID** for that PDF. |
+| **Who fills it** | Usually **not typed by hand**. After finance marks a row for linking, **ian-bot** (or our backend) posts options in Slack; finance clicks the right contract, and the script **writes this column** for that row. |
+| **Why we need it** | Payments and contracts are separate lists. This column is the official “this payment belongs to **that** contract” so totals and Q&A stay correct. |
+| **Related columns** | Likely also: link **status** (e.g. needs link / linked / none) and a **“Link to contract”** checkbox to start the Slack flow. |
+
+Until `contract_ref` is set for a row, the Q&A side may answer contract questions but should treat that payment as **not linked** (no reliable “how much paid on this deal” for that row).
+
+---
+
+## Slack: ian-bot today vs contract features
+
+| | **Today (ian-bot)** | **Planned add-ons** |
+|--|---------------------|---------------------|
+| **Role** | Alerts when new signed PDFs land in Drive (via Apps Script). | (1) **Payment linking**—buttons to fill `contract_ref` on the sheet. (2) **Contract Q&A**—questions about deals and payments using Postgres + Gemini. |
+| **Who sees it** | Whatever channels/users already get alerts. | **Back office and management only** (allowlist of Slack users—not open to the whole company). |
+| **How to build it** | Keep as-is for alerts. | **Option A:** Extend **ian-bot** with new commands / DMs / button handlers. **Option B:** Create a **second** Slack bot only for linking + Q&A; ian-bot stays alerts-only. |
+
+**Option A (one bot)** — Simpler for users: one name in Slack. Need clear separation inside the code (alerts vs linking vs Q&A) and careful permissions so only allowlisted users can ask contract questions or click link buttons.
+
+**Option B (two bots)** — ian-bot unchanged; new bot for sensitive features. Slightly more setup, but alerts and “legal/finance assistant” are clearly separated.
+
+Access control either way: maintain a list of allowed Slack user IDs (back office + management). Everyone else can still get Drive alerts if they do today; they should **not** get Q&A or payment-linking actions unless we explicitly add them.
+
 ---
 
 ## What we’re building (big picture)
@@ -14,30 +47,30 @@ The system keeps a **searchable catalog in Postgres** (a normal database) and us
 | Piece | What it does |
 |--------|----------------|
 | **Google Drive** | Official home for signed PDFs (inbox + subfolders). Each file has a permanent **file ID** that stays the same when the file is moved between folders. |
-| **Finance Google Sheet** | Official log of payments (date, amount, payee, etc.). Each row can link to one contract via **`contract_ref`**. |
-| **Existing Apps Script** | Already watches Drive and sends **alerts** in Slack when a new PDF shows up. We will extend it to **tell the catalog service to index** new files. |
-| **Catalog / ingest service** | Backend that reads a PDF, asks Gemini to pull out key fields, and saves everything to Postgres. Also copies sheet rows into Postgres. |
-| **Slack — payment linking** | When finance marks a row “ready to link,” Slack shows **a few likely contracts as buttons**. Finance picks one; the sheet’s **`contract_ref`** is filled in. |
-| **Slack — Q&A bot (new app)** | A **separate** bot for questions like “How much did we pay on the ABC deal?” Answers use **only** Postgres + short Gemini summaries, with links back to Drive. |
+| **Finance Google Sheet** | Official log of payments (date, amount, payee, etc.). New column **`contract_ref`** links each row to one contract (filled via Slack, not manual hunt in Drive). |
+| **Existing Apps Script** | Already watches Drive and sends **alerts** through **ian-bot**. We will extend it to **tell the catalog service to index** new files. |
+| **Catalog / ingest service** | Backend that reads a PDF, asks Gemini to pull out key fields, and saves everything to Postgres. Also copies sheet rows (including `contract_ref`) into Postgres. |
+| **Slack — payment linking** | When finance marks a row “ready to link,” **ian-bot** (or a new bot) shows **likely contracts as buttons**. Finance picks one; the new **`contract_ref`** column is updated on the sheet. |
+| **Slack — contract Q&A** | Allowlisted users (back office, management) ask questions like “How much did we pay on the ABC deal?” Answers use **only** Postgres + Gemini, with links back to Drive. |
 
 ```text
   Drive (PDFs)
        |
        v
-  Apps Script ----alert----> Existing Slack bot (unchanged idea)
+  Apps Script ----alert----> ian-bot (existing)
        |
        +---- "index this file" ---> Ingest + Gemini ---> Postgres
 
-  Finance Sheet
+  Finance Sheet (+ new contract_ref column)
        |
        |  finance checks "link to contract"
        v
-  Slack message with buttons ---> finance picks ---> contract_ref on sheet
+  ian-bot (or new bot): buttons ---> finance picks ---> contract_ref on sheet
        |
        v
   Sheet sync ---> Postgres
 
-  New Q&A Slack bot ---> reads Postgres + Gemini ---> answers in DM
+  ian-bot (or new bot): Q&A for allowlisted users ---> Postgres + Gemini
 ```
 
 ---
@@ -53,8 +86,8 @@ The system keeps a **searchable catalog in Postgres** (a normal database) and us
 3. Our system finds **a short list of likely PDFs** (from the contract catalog: names, parties, filenames, past picks for the same payee).
 4. **Slack** sends finance a message with **clickable options** (and something like “None of these”).
 5. Finance chooses the right contract.
-6. The sheet column **`contract_ref`** is updated (Drive link or file ID).
-7. The next **sheet sync** copies that link into Postgres so the Q&A bot can add up payments correctly.
+6. The **new sheet column `contract_ref`** is updated on that row (Drive link or file ID).
+7. The next **sheet sync** copies that link into Postgres so contract Q&A can add up payments correctly.
 
 **Rules we care about:**
 
@@ -73,10 +106,12 @@ The system keeps a **searchable catalog in Postgres** (a normal database) and us
 - [ ] Create **Postgres** (simple local database for development; managed database for production).
 - [ ] Write down the Drive **root folder ID**; confirm the script and service account can read the whole tree.
 - [ ] Write down the finance **sheet ID** and which columns mean date, amount, payee, etc.
-- [ ] Add sheet columns: **`contract_ref`**, link **status**, and a **“Link to contract”** checkbox (or similar).
+- [ ] Add **new** sheet columns on the finance tab: **`contract_ref`** (link or file ID), link **status**, and **“Link to contract”** checkbox (or similar).
+- [ ] Brief finance on the new column: it is filled by Slack after they confirm a match, not by pasting Drive links by default.
 - [ ] Decide where Slack link messages go (finance channel vs direct messages).
+- [ ] Decide **ian-bot extended** vs **second Slack bot**; define allowlist for **back office + management**.
 - [ ] Create a **service account** that can only access the contract folder and the finance sheet (sheet needs write access for `contract_ref`).
-- [ ] Store passwords/tokens safely: Slack bots, Gemini, database URL, webhook secret.
+- [ ] Store passwords/tokens safely: ian-bot / Slack, Gemini, database URL, webhook secret.
 
 ### Phase 1 — Database catalog
 
@@ -108,7 +143,7 @@ The system keeps a **searchable catalog in Postgres** (a normal database) and us
 
 ### Phase 3 — Update existing Apps Script (Drive monitor)
 
-- [ ] Keep today’s behavior: new PDF → **alert** in Slack (existing bot).
+- [ ] Keep today’s behavior: new PDF → **alert** in Slack via **ian-bot**.
 - [ ] After the file is in the tree, call the ingest service with its **file ID**.
 - [ ] Protect the webhook (shared secret).
 - [ ] Avoid indexing the same file twice in a row (debounce).
@@ -116,14 +151,16 @@ The system keeps a **searchable catalog in Postgres** (a normal database) and us
 - [ ] When finance checks “link to contract,” trigger the Slack linking flow (from script or backend).
 - [ ] Remember: moving a PDF between subfolders **does not change** its file ID.
 
-### Phase 4 — New Slack bot for questions (Q&A)
+### Phase 4 — Contract Q&A on Slack (ian-bot or new bot)
 
-- [ ] New Slack app, separate from the alert bot (and clarify if linking uses the same app or another).
+- [ ] Choose: extend **ian-bot** vs register a **new** Slack app (linking + Q&A).
 - [ ] Connect the app to our server; handle button clicks for linking and messages for Q&A.
-- [ ] Start with **direct messages only**; only allow specific Slack users.
+- [ ] Restrict contract Q&A and linking actions to **allowlisted** Slack users (back office + management).
+- [ ] Keep existing **ian-bot** Drive alerts working for current channels/users.
+- [ ] Prefer **DMs** for contract Q&A first; keep answers out of public channels.
 - [ ] Look up contracts and payments in Postgres; add up payments in the database (not in AI).
 - [ ] Ask Gemini to write a clear answer **only from that data**; include contract name and Drive link.
-- [ ] If data is missing or unlinked, say so—don’t invent contract terms.
+- [ ] If data is missing or `contract_ref` empty, say so—don’t invent contract terms.
 
 ### Phase 5 — Quality and edge cases
 
@@ -155,7 +192,7 @@ The system keeps a **searchable catalog in Postgres** (a normal database) and us
 2. Ingest service + Gemini extraction + sheet sync.
 3. Apps Script calls ingest when a new PDF appears.
 4. **Slack linking** → finance picks contract → `contract_ref` on sheet.
-5. **Q&A Slack bot** in DMs.
+5. **Contract Q&A** on ian-bot (or new bot) in DMs for allowlisted users.
 6. Aliases, golden questions, production deploy.
 
 ---
@@ -166,7 +203,8 @@ The system keeps a **searchable catalog in Postgres** (a normal database) and us
 |--------|---------|----------|
 | Gemini | API key vs Vertex (company cloud) | _TBD_ |
 | Hosting | Cloud Run vs small server | _TBD_ |
-| Slack apps | One app for linking + Q&A vs two | _TBD_ |
+| Slack | Extend **ian-bot** vs new bot for linking + Q&A | _TBD_ |
+| Who can use Q&A / linking | Allowlist: back office + management | _TBD (exact user list)_ |
 | Link messages | Finance channel vs DM | _TBD_ |
 
 ---
@@ -178,8 +216,8 @@ The system keeps a **searchable catalog in Postgres** (a normal database) and us
 | Drive root folder | |
 | Finance sheet | |
 | Slack workspace | |
-| Q&A Slack app | |
-| Alert / linking Slack app(s) | |
+| ian-bot (Slack app) | |
+| Second Slack app (if not extending ian-bot) | |
 
 ---
 
