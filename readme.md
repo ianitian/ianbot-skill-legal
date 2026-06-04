@@ -211,6 +211,8 @@ Access control either way: maintain a list of allowed Slack user IDs (back offic
 
 ## IDs to fill in later
 
+> **Warning:** This repo is set to **public**. Do **not** enter actual IDs, tokens, or other real values in this file or in committed config. Keep real values in private notes, a password manager, or your deployment environment only.
+
 | What | ID |
 |------|-----|
 | Drive root folder | |
