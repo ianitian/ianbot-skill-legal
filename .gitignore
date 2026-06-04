@@ -3,6 +3,9 @@
 *.pem
 *-credentials.json
 *service-account*.json
+# GCP service account key downloads (e.g. project-id-<12hex>.json)
+exp-*.json
+*-????????????.json
 __pycache__/
 *.py[cod]
 .Python

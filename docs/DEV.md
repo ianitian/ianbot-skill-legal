@@ -18,6 +18,8 @@ pip install -e ".[dev]"
 docker compose up -d postgres
 ```
 
+**Wipe local DB (full reset):** `./scripts/wipe-local-db.sh` — removes the Postgres volume and recreates tables from `db/schema.sql`.
+
 ## Run API
 
 ```bash
