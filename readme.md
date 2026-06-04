@@ -9,7 +9,7 @@ Upgrade plans for Slack bot, "ian-bot", that will reference and answer user quer
 
 The system keeps a **searchable catalog in Postgres** (a normal database) and uses **Google Gemini** to read contracts once and to write answers—we are **not training a custom AI model**. When new files or rows appear, we **refresh the catalog**; that is not “training.”
 
-**Usage:** Low volume (back office and management, a few times per month). Architecture stays small: one backend on **Google Cloud Run**, **no dedicated cron server**.
+**Usage:** Low volume (back office and management, a few times per month). Architecture stays small: **ianbot-api** on **GKE**, catalog in **AlloyDB** (PostgreSQL-compatible). **Scheduling uses Google Apps Script time-driven triggers only**—no dedicated cron VM, Cloud Scheduler, or Kubernetes CronJob required.
 
 FYI / nomenclature:
 
@@ -77,9 +77,11 @@ Until `contract_ref` is set for a row, the assistant should treat that payment a
 
 ## For DevOps and engineering
 
+**Stack note:** Org standard is **GKE + AlloyDB** (not Cloud Run + Cloud SQL). Same FastAPI app and endpoints; different deploy and database targets.
+
 ### Services map (minimal footprint)
 
-We want **one Cloud Run service**, **one Postgres (Cloud SQL)**, **Apps Script as triggers**, **no cron VM**, **no Kubernetes**.
+We want **one GKE Deployment (`ianbot-api`)**, **AlloyDB** for the catalog, and **Apps Script for all triggers and schedules** (no dedicated cron VM).
 
 ```text
 ┌──────────────────────────────────────────────────────────────────┐
@@ -88,13 +90,14 @@ We want **one Cloud Run service**, **one Postgres (Cloud SQL)**, **Apps Script a
 │  • Apps Script — Drive watch, Slack alerts, timed triggers       │
 │  • Drive       — signed PDFs (folder tree)                       │
 │  • Sheet       — payments + contract_ref                         │
-└──--────────────────────────┬─────────────────┬───────────────────┘
+└────────────────────────────┬─────────────────┬───────────────────┘
                              │                 │
                     HTTPS    │                 │  Google APIs
                     (poke)   │                 │  (Drive / Sheets)
                              v                 v
               ┌──────────────────────────┐   ┌──────────────────────────┐
-              │  Cloud Run: ianbot-api   │   │  Gemini API (Google)     │
+              │  GKE: ianbot-api         │   │  Gemini API (Google)     │
+              │  (Deployment + Ingress)  │   │                          │
               │                          │   │                          │
               │  POST /ingest            │──>│  PDF extraction          │
               │  POST /sync/sheet        │   │  Answer wording (later)  │
@@ -102,10 +105,10 @@ We want **one Cloud Run service**, **one Postgres (Cloud SQL)**, **Apps Script a
               │  later: /slack/events    │   │                          │
               └────────────┬─────────────┘   └──────────────────────────┘
                            │
-                           │  SQL
+                           │  SQL (PostgreSQL wire protocol)
                            v
               ┌──────────────────────────┐
-              │  Cloud SQL: Postgres     │
+              │  AlloyDB                 │
               │                          │
               │  contracts, payments,    │
               │  aliases (schema TBD)    │
@@ -116,7 +119,7 @@ We want **one Cloud Run service**, **one Postgres (Cloud SQL)**, **Apps Script a
               │                          │
               │  • Webhook — ian-bot     │
               │    alerts (today)        │
-              │  • Events API → Cloud Run│
+              │  • Events API → Ingress  │
               │    linking + Q&A (later) │
               └──────────────────────────┘
 ```
@@ -124,10 +127,10 @@ We want **one Cloud Run service**, **one Postgres (Cloud SQL)**, **Apps Script a
 | Component | Role | Hosted by |
 |-----------|------|-----------|
 | **Apps Script** | New PDF → Slack alert + `POST /ingest`; optional daily `POST /sync/sheet` | Google |
-| **Cloud Run** | Ingest PDF, sync sheet, Slack interactivity, Q&A logic | GCP |
-| **Cloud SQL** | Catalog (contracts, payments)—schema TBD | GCP |
+| **GKE (`ianbot-api`)** | Ingest PDF, sync sheet, Slack interactivity, Q&A logic | GCP |
+| **AlloyDB** | Catalog (contracts, payments)—PostgreSQL-compatible; schema TBD | GCP |
 | **Secret Manager** | API keys, DB URL, ingest secret, Slack secrets | GCP |
-| **Service account** | Robot Google identity for Drive + Sheet API access | GCP |
+| **Service account** | Robot Google identity for Drive + Sheet API access (via workload identity on GKE) | GCP |
 | **Gemini** | Extract fields from PDF; compose answers from catalog | Google |
 | **ian-bot (Slack)** | Alerts today; may add Q&A + linking later | Slack |
 
@@ -138,44 +141,55 @@ We want **one Cloud Run service**, **one Postgres (Cloud SQL)**, **Apps Script a
 | Endpoint | Called by | Purpose |
 |----------|-----------|---------|
 | `POST /ingest` | Apps Script after new PDF | Body: `drive_file_id`. Download PDF → Gemini → upsert contract. |
-| `POST /sync/sheet` | Apps Script daily trigger **or** Cloud Scheduler | Copy finance sheet → Postgres (including `contract_ref`). |
+| `POST /sync/sheet` | Apps Script **daily** time-driven trigger | Copy finance sheet → AlloyDB (including `contract_ref`). |
 | `GET /health` | Monitoring | Liveness check. |
 
 **`POST /ingest` steps:** validate shared secret header → download PDF via service account → skip if not PDF or unchanged → Gemini JSON extraction → upsert by `drive_file_id` → return 200 or error.
 
 **Security:** `X-Ingest-Secret` (or similar) on `/ingest` and `/sync/sheet`; not open anonymous internet. Real values in **Secret Manager**, not in this public repo.
 
-**Later (same Cloud Run app):** Slack Events API + interactivity for payment linking and Q&A.
+**Later (same `ianbot-api` Deployment):** Slack Events API + interactivity for payment linking and Q&A.
 
-### Scheduling: no cron server
+### Scheduling: Apps Script only (no cron VM)
 
-We do **not** need a VM whose only job is cron.
+We do **not** need a dedicated cron VM, **Cloud Scheduler**, or a **Kubernetes CronJob** for this project. **Google Apps Script time-driven triggers** are the chosen approach: they call our GKE Ingress URLs on a schedule; GKE does the real work.
 
-| Job | Recommended trigger |
-|-----|---------------------|
-| New PDF alert + index | Existing Apps Script timer → `checkForNewFiles` → Slack + `pokeIngestWebhook` |
-| Daily sheet → Postgres | **Apps Script time-driven trigger** → `POST /sync/sheet` |
-| Optional Drive catch-up | Apps Script weekly **or** Cloud Scheduler → backend rescan endpoint |
+| Job | Trigger (Apps Script) |
+|-----|------------------------|
+| New PDF alert + index | Recurring trigger → `checkForNewFiles` → Slack + `pokeIngestWebhook` → `POST /ingest` |
+| Daily sheet → AlloyDB | **Daily** time-driven trigger → `syncSheetToBackend()` → `POST /sync/sheet` |
+| Optional Drive catch-up | **Weekly** time-driven trigger → `reconcileDrive()` → rescan endpoint (if we add one) |
 
-**Apps Script** = doorbell and timers. **Cloud Run** = heavy work (Gemini, DB, Slack buttons).
+**Apps Script** = doorbell **and alarm clock** (alerts + schedules). **GKE (`ianbot-api`)** = kitchen (Gemini, AlloyDB, Slack handlers).
+
+**Why this is enough:** Each scheduled run only needs to `UrlFetchApp.fetch` one HTTPS endpoint—well within Apps Script limits. No separate cron infrastructure to deploy or pay for.
+
+**Optional later (only if platform team requires GCP-native cron):** Cloud Scheduler or a K8s CronJob hitting the same Ingress URLs—**not planned for v1**; pick one mechanism total if we ever add a second.
 
 ### Google Cloud pieces (plain English)
 
-#### Cloud Run
+#### GKE (Google Kubernetes Engine)
 
-Runs our application as an **HTTPS URL** without managing a server. Google starts containers on demand; can **scale to zero** when idle (low cost for rare usage).
+Runs our application as containers in a cluster. Expose **HTTPS** via **Ingress** (org standard hostname + TLS).
 
-- Deploy one service (e.g. `ianbot-api`) from a Docker image.
-- Apps Script calls `https://….run.app/ingest`.
-- Later, Slack sends button clicks and DMs to the same URL.
+- **Deployment** `ianbot-api` — FastAPI app from the same Docker image as local dev.
+- **Service** (ClusterIP) — routes traffic to pods.
+- **Ingress** — public URL for Apps Script (`POST /ingest`) and later Slack Events API.
+- Low traffic: often **1 replica** is enough; use platform templates (Helm/Kustomize) if available.
+- **Probes** — Kubernetes `liveness` / `readiness` on `GET /health`.
 
-#### Cloud SQL
+Apps Script Script Properties use the **Ingress base URL** (e.g. `https://ianbot-api.<your-domain>/ingest`), not `*.run.app`.
 
-Managed **Postgres** for the catalog. Separate product from Cloud Run; connected over the network with credentials from Secret Manager. **Database table design is deferred**—this doc only assumes contracts + payments + optional aliases.
+#### AlloyDB
+
+Managed **PostgreSQL-compatible** database for the catalog. Separate from GKE; connect from pods over **private networking** (VPC / Private Service Connect / AlloyDB Auth Proxy—per platform team).
+
+- Same SQL and drivers as Postgres; **schema design is deferred**.
+- Connection string in Secret Manager → pod env `DATABASE_URL`.
 
 #### Secret Manager
 
-A **vault** for sensitive strings (Gemini key, database password, ingest webhook secret, Slack signing secret, bot tokens). Cloud Run reads them at runtime. **Do not commit secrets to this public GitHub repo.**
+A **vault** for sensitive strings (Gemini key, database password, ingest webhook secret, Slack signing secret, bot tokens). Mounted into pods via **External Secrets Operator** or your org’s pattern. **Do not commit secrets to this public GitHub repo.**
 
 | Secret (example name) | Used for |
 |------------------------|----------|
@@ -191,18 +205,20 @@ Apps Script uses **Script Properties** for the ingest URL and the same shared se
 
 A **robot Google account** for programs (not humans), e.g. `ianbot@….iam.gserviceaccount.com`.
 
-- Cloud Run runs as this identity (or uses its credentials).
+- Bind to GKE pods via **workload identity** (Kubernetes service account → GCP service account)—preferred over JSON key files in the cluster.
 - **Share** the contract Drive folder and finance sheet with this email (like sharing with a colleague).
-- **Never** commit the JSON key file to the public repo; prefer workload identity on Cloud Run in production.
+- **Never** commit the JSON key file to the public repo.
 
 #### Other GCP terms (reference)
 
 | Term | Meaning |
 |------|---------|
-| **GCP project** | Billing + container for Run, SQL, secrets |
-| **Region** | Where resources run (e.g. `us-central1`) |
+| **GCP project** | Billing + container for GKE, AlloyDB, secrets |
+| **GKE namespace** | Where `ianbot-api` Deployment lives (e.g. `ianbot-legal`) |
+| **Ingress / Gateway** | Public HTTPS entry to the API |
+| **Region** | Where cluster and AlloyDB run (e.g. `us-central1`) |
 | **IAM** | Who can deploy, who can read secrets |
-| **Cloud Scheduler** | Optional GCP cron hitting a URL—use **or** Apps Script timers, not both unless intentional |
+| **Cloud Scheduler** | Not used for v1 (Apps Script handles schedules). Optional GCP alternative if policy requires it |
 | **Vertex AI** | Enterprise Gemini path in GCP (legal may require this) |
 
 ### Slack: two connection types
@@ -210,23 +226,23 @@ A **robot Google account** for programs (not humans), e.g. `ianbot@….iam.gserv
 | Pattern | Used for | Points to |
 |---------|----------|-----------|
 | **Incoming webhook** | ian-bot “new file” alerts today | Slack URL; Apps Script posts JSON |
-| **Events API + interactivity** | Payment link buttons, Q&A later | **Cloud Run** HTTPS (Slack signing secret) |
+| **Events API + interactivity** | Payment link buttons, Q&A later | **Ingress** HTTPS on GKE (Slack signing secret) |
 
 ### DevOps setup checklist
 
-- [ ] GCP **project** for ianbot-api.
-- [ ] **Service account** + share Drive contract folder + finance sheet (write for `contract_ref`).
-- [ ] **Secret Manager** entries; grant Cloud Run runtime read access.
-- [ ] **Cloud SQL** Postgres (when schema is ready); network access from Cloud Run.
-- [ ] **Cloud Run** deploy from container; env from secrets.
-- [ ] Provide **ingest URL** for Apps Script Script Properties.
+- [ ] GCP **project** + **GKE** cluster (or shared cluster) + namespace for `ianbot-api`.
+- [ ] **AlloyDB** instance (when schema is ready); private connectivity from GKE per platform standard.
+- [ ] **Deployment**, **Service**, **Ingress** (+ TLS); `GET /health` probes configured.
+- [ ] **Workload identity** — GCP service account for Drive/Sheet; share contract folder + finance sheet (write for `contract_ref`).
+- [ ] **Secret Manager** entries; sync to pods (External Secrets or org pattern).
+- [ ] Provide **Ingress base URL** for Apps Script Script Properties (`/ingest`, `/sync/sheet`).
 - [ ] Confirm **Gemini**: Vertex vs AI Studio.
-- [ ] (Optional) **Cloud Scheduler** for `/sync/sheet` if not using Apps Script daily trigger only.
+- [ ] Apps Script **daily** time-driven trigger for `syncSheetToBackend` → `POST /sync/sheet` (no Cloud Scheduler / CronJob for v1).
 - [ ] Public repo: no real tokens in Git; rotate any secrets ever pasted into chat or commits.
 
 ### Suggested DevOps one-liner
 
-> One **Cloud Run** service and **Cloud SQL Postgres**; **Apps Script** for Drive alerts and HTTP triggers to ingest; **Secret Manager** for credentials; **service account** for Drive/Sheet; **Slack** webhooks for alerts today and Cloud Run for interactivity later. No VMs, no Kubernetes, scale to zero.
+> **GKE Deployment** `ianbot-api` behind **Ingress**; **AlloyDB** as the Postgres catalog; **Apps Script** for Drive alerts, **timed schedules**, and HTTP pokes to ingest/sync; **Secret Manager** + **workload identity** for Drive/Sheet; **Slack** webhooks for alerts today and **Ingress** for interactivity later. **No cron VM, Cloud Scheduler, or CronJob.**
 
 ---
 
@@ -248,9 +264,9 @@ Access control: allowlisted Slack user IDs. Others may still get Drive alerts; t
 |--------|----------------|
 | **Google Drive** | Official home for signed PDFs (inbox + subfolders). **File ID** stays the same when moved between folders. |
 | **Finance Google Sheet** | Payment log + new **`contract_ref`** column (via Slack linking). |
-| **Apps Script** | Alerts via **ian-bot**; poke ingest on new PDF; optional daily sheet sync trigger. |
-| **Cloud Run (ingest API)** | Index PDFs, sync sheet, later Slack handlers. |
-| **Postgres** | Catalog for Q&A and payment totals. |
+| **Apps Script** | Alerts via **ian-bot**; poke ingest on new PDF; **daily** time-driven trigger for sheet sync. |
+| **GKE (`ianbot-api`)** | Index PDFs, sync sheet, later Slack handlers (via Ingress). |
+| **AlloyDB** | PostgreSQL-compatible catalog for Q&A and payment totals. |
 | **Gemini** | Extract contract fields; write answers from catalog only. |
 
 ```text
@@ -259,15 +275,15 @@ Access control: allowlisted Slack user IDs. Others may still get Drive alerts; t
        v
   Apps Script ----alert----> ian-bot (existing webhook)
        |
-       +---- POST /ingest ---> Cloud Run + Gemini ---> Postgres
+       +---- POST /ingest ---> GKE (ianbot-api) + Gemini ---> AlloyDB
 
   Finance Sheet (+ contract_ref)
        |
        |  "Link to contract" -> Slack buttons -> contract_ref filled
        v
-  Apps Script (daily) or Scheduler ---> POST /sync/sheet ---> Postgres
+  Apps Script (daily trigger) ---> POST /sync/sheet ---> AlloyDB
 
-  ian-bot (later) ---> Cloud Run ---> Postgres + Gemini (Q&A, allowlisted)
+  ian-bot (later) ---> Ingress (GKE) ---> AlloyDB + Gemini (Q&A, allowlisted)
 ```
 
 ---
@@ -276,7 +292,7 @@ Access control: allowlisted Slack user IDs. Others may still get Drive alerts; t
 
 **Today:** `checkForNewFiles` scans the Drive folder, sends Slack alert for new files.
 
-**Added (foundation):** `pokeIngestWebhook(file)` after each alert—`POST` to Cloud Run `/ingest` with `drive_file_id`, using URL and secret from **Script Properties** (skips if URL not set).
+**Added (foundation):** `pokeIngestWebhook(file)` after each alert—`POST` to GKE Ingress `/ingest` with `drive_file_id`, using URL and secret from **Script Properties** (skips if URL not set).
 
 **Planned triggers:**
 
@@ -296,8 +312,8 @@ Access control: allowlisted Slack user IDs. Others may still get Drive alerts; t
 ### Phase 0 — Setup and access
 
 - [ ] Confirm with IT/legal: Gemini via **Vertex AI** vs **AI Studio API key**.
-- [ ] GCP project + **Cloud Run** + **Secret Manager** + **service account**.
-- [ ] **Postgres** (local Docker for dev; **Cloud SQL** for prod)—schema design later.
+- [ ] GCP project + **GKE** + **AlloyDB** + **Secret Manager** + **service account** (workload identity).
+- [ ] **Postgres** (local Docker for dev; **AlloyDB** for prod)—schema design later.
 - [ ] Document Drive **root folder ID**; service account access to full tree.
 - [ ] Document finance **sheet ID** and column mapping.
 - [ ] Finance: new columns **`contract_ref`**, link status, **“Link to contract”** checkbox.
@@ -312,13 +328,13 @@ Access control: allowlisted Slack user IDs. Others may still get Drive alerts; t
 - [ ] `schema.sql` + local dev setup.
 - [ ] Verify payment totals vs sheet for 2–3 linked contracts.
 
-### Phase 2 — Ingest service on Cloud Run
+### Phase 2 — Ingest service on GKE (`ianbot-api`)
 
 - [ ] FastAPI app: `POST /ingest`, `POST /sync/sheet`, `GET /health`.
 - [ ] Drive download (service account); PDF only; idempotent upsert.
-- [ ] Gemini extraction → Postgres.
+- [ ] Gemini extraction → AlloyDB.
 - [ ] Sheet sync including `contract_ref`.
-- [ ] Deploy to Cloud Run; wire Apps Script `pokeIngestWebhook`.
+- [ ] Deploy to GKE (Deployment + Ingress); wire Apps Script `pokeIngestWebhook`.
 
 ### Phase 2b — Link payments in Slack
 
@@ -330,12 +346,12 @@ Access control: allowlisted Slack user IDs. Others may still get Drive alerts; t
 
 - [x] Keep ian-bot alerts.
 - [ ] Ingest poke after alert; debounce duplicate file IDs.
-- [ ] Daily trigger for `/sync/sheet` (unless Cloud Scheduler owned by DevOps).
+- [ ] **Daily** Apps Script time-driven trigger for `syncSheetToBackend` → `POST /sync/sheet`.
 - [ ] Optional: ingest status in alert message.
 
 ### Phase 4 — Contract Q&A on Slack
 
-- [ ] Cloud Run Slack endpoints; allowlisted DMs.
+- [ ] GKE Slack endpoints (via Ingress); allowlisted DMs.
 - [ ] Answers from Postgres only; Gemini for wording; citations required.
 
 ### Phase 5 — Quality
@@ -354,7 +370,7 @@ Access control: allowlisted Slack user IDs. Others may still get Drive alerts; t
 
 ## Suggested build order
 
-1. Cloud Run `/ingest` stub + Apps Script poke (no DB, or fake response).
+1. GKE `/ingest` stub + Apps Script poke (no DB, or fake response).
 2. Postgres schema + real ingest + sheet sync.
 3. Slack payment linking → `contract_ref`.
 4. Q&A on ian-bot (or new app) for allowlisted users.
@@ -367,8 +383,8 @@ Access control: allowlisted Slack user IDs. Others may still get Drive alerts; t
 | Topic | Choices | Decision |
 |--------|---------|----------|
 | Gemini | API key vs Vertex (company cloud) | _TBD_ |
-| Hosting | **Cloud Run** (recommended) vs small VM | _TBD_ |
-| Sheet sync schedule | Apps Script daily vs **Cloud Scheduler** | _TBD_ |
+| GKE / AlloyDB | Namespace, Ingress host, AlloyDB instance (platform template?) | _TBD_ |
+| Sheet sync schedule | **Apps Script daily trigger** (no Cloud Scheduler / CronJob for v1) | _decided_ |
 | Slack | Extend **ian-bot** vs new bot | _TBD_ |
 | Q&A / linking users | Allowlist: back office + management | _TBD_ |
 | Link messages | Finance channel vs DM | _TBD_ |
@@ -387,8 +403,9 @@ Access control: allowlisted Slack user IDs. Others may still get Drive alerts; t
 | ian-bot (Slack app) | |
 | Second Slack app (if not extending ian-bot) | |
 | GCP project | |
-| Cloud Run service URL | |
-| Cloud SQL instance | |
+| Ingress URL (ianbot-api) | |
+| AlloyDB instance | |
+| GKE cluster / namespace | |
 
 ---
 
