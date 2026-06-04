@@ -78,30 +78,43 @@ Until `contract_ref` is set for a row, the assistant should treat that payment a
 We want **one Cloud Run service**, **one Postgres (Cloud SQL)**, **Apps Script as triggers**, **no cron VM**, **no Kubernetes**.
 
 ```text
-┌─────────────────────────────────────────────────────────────┐
-│  Google Workspace (no servers we manage)                    │
-│  • Apps Script — Drive watch, Slack alerts, timed triggers  │
-│  • Drive — signed PDFs (folder tree)                        │
-│  • Sheet — payments + contract_ref                          │
-└───────────────┬─────────────────────────────┬───────────────┘
-                │ HTTPS                       │ Google APIs
-                v                             v
-┌───────────────────────────────┐   ┌─────────────────────────┐
-│  Cloud Run: ianbot-api         │   │  Gemini API             │
-│  /ingest, /sync/sheet, /health │   │  (Google)               │
-│  later: /slack/events          │   └─────────────────────────┘
-└───────────────┬───────────────┘
-                │
-                v
-┌───────────────────────────────┐
-│  Cloud SQL: Postgres           │
-└───────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│  Google Workspace (no servers we manage)                         │
+│                                                                  │
+│  • Apps Script — Drive watch, Slack alerts, timed triggers       │
+│  • Drive       — signed PDFs (folder tree)                       │
+│  • Sheet       — payments + contract_ref                         │
+└──--────────────────────────┬─────────────────┬───────────────────┘
+                             │                 │
+                    HTTPS    │                 │  Google APIs
+                    (poke)   │                 │  (Drive / Sheets)
+                             v                 v
+              ┌──────────────────────────┐   ┌──────────────────────────┐
+              │  Cloud Run: ianbot-api   │   │  Gemini API (Google)     │
+              │                          │   │                          │
+              │  POST /ingest            │──>│  PDF extraction          │
+              │  POST /sync/sheet        │   │  Answer wording (later)  │
+              │  GET  /health            │   │                          │
+              │  later: /slack/events    │   │                          │
+              └────────────┬─────────────┘   └──────────────────────────┘
+                           │
+                           │  SQL
+                           v
+              ┌──────────────────────────┐
+              │  Cloud SQL: Postgres     │
+              │                          │
+              │  contracts, payments,    │
+              │  aliases (schema TBD)    │
+              └──────────────────────────┘
 
-┌───────────────────────────────┐
-│  Slack                         │
-│  • Incoming webhook — ian-bot alerts (today)                 │
-│  • Events API → Cloud Run (linking buttons, Q&A later)       │
-└───────────────────────────────┘
+              ┌──────────────────────────┐
+              │  Slack                   │
+              │                          │
+              │  • Webhook — ian-bot     │
+              │    alerts (today)        │
+              │  • Events API → Cloud Run│
+              │    linking + Q&A (later) │
+              └──────────────────────────┘
 ```
 
 | Component | Role | Hosted by |
@@ -197,7 +210,7 @@ A **robot Google account** for programs (not humans), e.g. `ianbot@….iam.gserv
 
 ### DevOps setup checklist
 
-- [ ] GCP **project** for ian-bot-legal.
+- [ ] GCP **project** for ianbot-api.
 - [ ] **Service account** + share Drive contract folder + finance sheet (write for `contract_ref`).
 - [ ] **Secret Manager** entries; grant Cloud Run runtime read access.
 - [ ] **Cloud SQL** Postgres (when schema is ready); network access from Cloud Run.
