@@ -1,8 +1,8 @@
-# ian-bot-legal — contract & payment assistant
+# ianbot-skill-legal
 
 **Base document** for product, engineering, DevOps, finance, and legal. Describes what we plan to build, how pieces connect, and what each group needs to decide or provide.
 
-An **internal Slack assistant** that answers questions about:
+Upgrade plans for Slack bot, "ian-bot", that will reference and answer user queries based on:
 
 - **Signed contracts** (PDFs in a Google Drive folder tree), and
 - **Payments** (rows in a finance Google Sheet).
@@ -11,7 +11,11 @@ The system keeps a **searchable catalog in Postgres** (a normal database) and us
 
 **Usage:** Low volume (back office and management, a few times per month). Architecture stays small: one backend on **Google Cloud Run**, **no dedicated cron server**.
 
-Slack today: our existing bot is **ian-bot** (Drive alerts and related messages). Contract Q&A and payment linking may live on **ian-bot** (extended) or on a **new** Slack app—we have not decided yet (see below).
+FYI / nomenclature:
+
+- Our existing bot is called **ian-bot** (Drive alerts and related messages). Contract Q&A and payment linking may live on **ian-bot** (extended) or on a **new** Slack app—we have not decided yet (see below).
+- All backend service names will be called ianbot-api.
+- This repo is called ianbot-skill-legal, to "add legal skill". If there are other feature ideas, they will likely be called "ianbot-skill-XXX".
 
 ---
 
