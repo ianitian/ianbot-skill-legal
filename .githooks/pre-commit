@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Auto patch bump before each commit (0.0.1 -> 0.0.2). Skip: git commit --no-verify
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+
+python3 scripts/bump_patch.py
+git add VERSION pyproject.toml ingest/api.py

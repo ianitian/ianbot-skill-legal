@@ -409,12 +409,44 @@ Access control: allowlisted Slack user IDs. Others may still get Drive alerts; t
 
 ---
 
-## Code folders (target)
+## Code folders
 
 ```text
-bot/           # Slack: questions + button clicks for linking
-ingest/        # Drive, sheet, Gemini, FastAPI routes
-core/          # DB access, orchestrator, prompts
-db/            # schema.sql (later)
-docs/          # extra notes if needed
+bot/           # Slack: questions + button clicks (later)
+ingest/        # FastAPI app (ianbot-api): /health, /ingest, /sync/sheet
+core/          # config, auth, extract, db
+db/            # schema.sql
+docs/          # DEV.md, apps-script notes
+deploy/        # GKE manifests (later)
+tests/         # API smoke tests
 ```
+
+**Local dev:** see [docs/DEV.md](docs/DEV.md).
+
+---
+
+## Versioning
+
+**Current version:** `0.0.1` (also in [`VERSION`](VERSION), `pyproject.toml`, and `GET /health` → `version`).
+
+| Bump | When | How |
+|------|------|-----|
+| **Patch** `0.0.1` → `0.0.2` | Every routine revision commit | Auto: enable [`.githooks/pre-commit`](.githooks/pre-commit) via `./scripts/setup-git-hooks.sh`, **or** run `./scripts/commit-revision.sh -m "your message"` |
+| **Minor** `0.1.0` → `0.2.0` | Only when you explicitly want a minor release | `python3 scripts/bump_minor.py`, update changelog, then `git commit` (use `--no-verify` if hooks would patch-bump again) |
+| **Major** `1.0.0` → `2.0.0` | Only when you explicitly want a major release | `python3 scripts/bump_major.py`, update changelog, then `git commit` |
+
+**Commit messages:** include the version tag, e.g. `feat(v0.0.1): …` or `fix(v0.0.2): …`.
+
+**Skip auto patch bump** (rare): `git commit --no-verify`.
+
+After enabling hooks, each `git commit` bumps patch and stages `VERSION`, `pyproject.toml`, and `ingest/api.py` before the commit is created—add changelog notes in the same commit when you can.
+
+---
+
+## Changelog
+
+### v0.0.1
+
+- Initial **ianbot-api** scaffold: FastAPI (`/health`, `/ingest`, `/sync/sheet`), stub Gemini extraction, local Postgres schema via Docker Compose.
+- Docs for DevOps (GKE + AlloyDB), finance (`contract_ref`), legal, and Apps Script ingest poke.
+- API smoke tests; versioning scripts and optional git hook for patch bumps.

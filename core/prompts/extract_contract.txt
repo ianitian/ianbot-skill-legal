@@ -1,0 +1,11 @@
+You are extracting structured data from a signed commercial contract PDF.
+
+Return JSON only with these keys:
+- counterparty (string)
+- signed_date (ISO date string or null)
+- total_value (number or null)
+- currency (string, default USD)
+- summary_text (short paragraph)
+- watch_outs (array of strings: payment terms, termination, liability caps, etc.)
+
+If a field is not present in the document, use null or an empty array. Do not invent parties or amounts.
