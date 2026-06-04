@@ -36,7 +36,7 @@ Until `contract_ref` is set for a row, the assistant should treat that payment a
 
 ### What we need from finance
 
-- [ ] Agree to the new columns above on the existing payment sheet.
+- [x] Agree to the new columns above on the existing payment sheet.
 - [ ] Use the **“Link to contract”** flow in Slack when prompted (pick from suggested contracts; do not skip if the payment belongs to a deal).
 - [ ] Optionally add a **`contract_ref`** on historical rows we care about (can be phased in).
 - [ ] Confirm column names for date, amount, payee, memo so engineering can map the sheet sync.
@@ -328,7 +328,7 @@ Access control: allowlisted Slack user IDs. Others may still get Drive alerts; t
 
 ### Phase 3 — Apps Script
 
-- [ ] Keep ian-bot alerts.
+- [x] Keep ian-bot alerts.
 - [ ] Ingest poke after alert; debounce duplicate file IDs.
 - [ ] Daily trigger for `/sync/sheet` (unless Cloud Scheduler owned by DevOps).
 - [ ] Optional: ingest status in alert message.
