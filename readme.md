@@ -1,4 +1,4 @@
-# ianbot-skill-legal
+# ianbot-skill-legal v0.0.2
 
 **Base document** for product, engineering, DevOps, finance, and legal. Describes what we plan to build, how pieces connect, and what each group needs to decide or provide.
 
@@ -427,7 +427,7 @@ tests/         # API smoke tests
 
 ## Versioning
 
-**Current version:** `0.0.1` (also in [`VERSION`](VERSION), `pyproject.toml`, and `GET /health` → `version`).
+**Current version:** `0.0.2` (also in [`VERSION`](VERSION), `pyproject.toml`, `readme.md` title, and `GET /health` → `version`).
 
 | Bump | When | How |
 |------|------|-----|
@@ -439,11 +439,17 @@ tests/         # API smoke tests
 
 **Skip auto patch bump** (rare): `git commit --no-verify`.
 
-After enabling hooks, each `git commit` bumps patch and stages `VERSION`, `pyproject.toml`, and `ingest/api.py` before the commit is created—add changelog notes in the same commit when you can.
+After enabling hooks, each `git commit` bumps patch and stages `VERSION`, `pyproject.toml`, `ingest/api.py`, and the `readme.md` title (`# ianbot-skill-legal vX.X.X`) before the commit is created—add changelog notes in the same commit when you can.
 
 ---
 
 ## Changelog
+
+### v0.0.2
+
+- Local dev: `scripts/wipe-local-db.sh` full Postgres reset (Docker volume + `schema.sql`); documented in `docs/DEV.md`.
+- Phase 0 helpers: `scripts/test_drive_sa.py` and `test_drive_sa2.py` to validate service account folder list and PDF download.
+- `.gitignore` rules for GCP service account JSON key downloads (keep keys out of the public repo).
 
 ### v0.0.1
 

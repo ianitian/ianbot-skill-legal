@@ -6,7 +6,7 @@ cd "$(dirname "$0")/.."
 
 python3 scripts/bump_patch.py
 VERSION=$(cat VERSION)
-git add VERSION pyproject.toml ingest/api.py
+git add VERSION pyproject.toml ingest/api.py readme.md
 
 echo "Staged version bump to v${VERSION}"
 git commit "$@"
