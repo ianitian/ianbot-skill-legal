@@ -1,5 +1,4 @@
-# ianbot-skill-legal v0.0.2
-
+# ianbot-skill-legal v0.0.3
 **Base document** for product, engineering, DevOps, finance, and legal. Describes what we plan to build, how pieces connect, and what each group needs to decide or provide.
 
 Upgrade plans for Slack bot, "ian-bot", that will reference and answer user queries based on:
@@ -427,7 +426,7 @@ tests/         # API smoke tests
 
 ## Versioning
 
-**Current version:** `0.0.2` (also in [`VERSION`](VERSION), `pyproject.toml`, `readme.md` title, and `GET /health` → `version`).
+**Current version:** `0.0.3` (also in [`VERSION`](VERSION), `pyproject.toml`, `readme.md` title, and `GET /health` → `version`).
 
 | Bump | When | How |
 |------|------|-----|
@@ -444,6 +443,11 @@ After enabling hooks, each `git commit` bumps patch and stages `VERSION`, `pypro
 ---
 
 ## Changelog
+
+### v0.0.3
+
+- `/ingest` downloads contract PDFs from Drive in memory via service account (`core/drive.py`); `GET /health` reports `drive_configured`.
+- Google client libraries added to project dependencies; Drive download errors return `status: error` with HTTP 200 for Apps Script pokes.
 
 ### v0.0.2
 

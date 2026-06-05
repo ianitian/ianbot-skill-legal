@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 from typing import Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -11,10 +12,16 @@ class Settings(BaseSettings):
     database_url: Optional[str] = None
     gemini_enabled: bool = False
     gemini_api_key: Optional[str] = None
+    google_application_credentials: Optional[str] = None
 
     @property
     def database_configured(self) -> bool:
         return bool(self.database_url and self.database_url.strip())
+
+    @property
+    def drive_configured(self) -> bool:
+        path = self.google_application_credentials
+        return bool(path and path.strip() and Path(path).is_file())
 
 
 @lru_cache

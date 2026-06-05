@@ -3,9 +3,11 @@ from typing import Optional
 from fastapi import APIRouter, Depends
 
 from core.auth import verify_ingest_secret
-from core.config import Settings, get_settings
+from core.config import get_settings
 from core.version import get_app_version
 from core import db as db_module
+from core import drive as drive_module
+from core.drive import DriveDownloadError, DriveNotConfiguredError
 from core.extract import extract_contract
 from ingest.schemas import IngestRequest, IngestResponse, SyncSheetResponse
 
@@ -19,6 +21,7 @@ def health() -> dict:
         "status": "ok",
         "version": get_app_version(),
         "database_configured": settings.database_configured,
+        "drive_configured": settings.drive_configured,
         "gemini_enabled": settings.gemini_enabled,
     }
 
@@ -34,16 +37,31 @@ def ingest(ingest_request: IngestRequest) -> IngestResponse:
             message=f"Unsupported mime type: {ingest_request.mime_type}",
         )
 
-    # PDF bytes from Drive — TODO when service account is available (Phase 0).
-    pdf_bytes = b""
+    mode = "database" if settings.database_configured else "stub"
+    message: Optional[str] = None
+
+    if settings.drive_configured:
+        try:
+            pdf_bytes = drive_module.download_pdf(ingest_request.drive_file_id)
+        except DriveNotConfiguredError:
+            pdf_bytes = b""
+            message = "Drive credentials not configured."
+        except DriveDownloadError as exc:
+            return IngestResponse(
+                status="error",
+                drive_file_id=ingest_request.drive_file_id,
+                mode=mode,
+                message=f"Drive download failed ({exc.status_code}): {exc.message}",
+            )
+    else:
+        pdf_bytes = b""
+        message = "Drive not configured; stub extraction only (empty PDF bytes)."
+
     fields = extract_contract(
         pdf_bytes,
         ingest_request.file_name,
         gemini_enabled=settings.gemini_enabled,
     )
-
-    mode = "database" if settings.database_configured else "stub"
-    message: Optional[str] = None
 
     if settings.database_configured:
         try:

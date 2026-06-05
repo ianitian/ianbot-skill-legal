@@ -26,13 +26,15 @@ docker compose up -d postgres
 uvicorn ingest.api:app --reload --port 8000
 ```
 
-- Health: http://localhost:8000/health
-- Ingest (stub): `curl -X POST http://localhost:8000/ingest \
+- Health: http://localhost:8000/health (`drive_configured` is true when `GOOGLE_APPLICATION_CREDENTIALS` points at a service account JSON file)
+- Ingest: `curl -X POST http://localhost:8000/ingest \
   -H "Content-Type: application/json" \
   -H "X-Ingest-Secret: change-me-local-only" \
   -d '{"drive_file_id":"test123","file_name":"Sample.pdf"}'`
 
 With `DATABASE_URL` set (see `.env.example`), ingest writes to local Postgres.
+
+When `GOOGLE_APPLICATION_CREDENTIALS` is set, `/ingest` downloads the PDF from Drive **in memory** (no file written to disk), then runs extraction. Re-test with a real `drive_file_id` via curl or Apps Script `testPokeIngestWebhook`.
 
 ## Tests
 
