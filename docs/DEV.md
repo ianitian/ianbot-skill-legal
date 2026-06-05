@@ -36,6 +36,21 @@ With `DATABASE_URL` set (see `.env.example`), ingest writes to local Postgres.
 
 When `GOOGLE_APPLICATION_CREDENTIALS` is set, `/ingest` downloads the PDF from Drive **in memory** (no file written to disk), then runs extraction. Re-test with a real `drive_file_id` via curl or Apps Script `testPokeIngestWebhook`.
 
+### Gemini extraction (dev)
+
+1. Create an API key in **Google AI Studio**: `https://aistudio.google.com/apikey`
+2. Set in `.env`:
+
+```bash
+GEMINI_ENABLED=true
+GEMINI_API_KEY=your-key-here
+GEMINI_BACKEND=studio
+GEMINI_MODEL=gemini-2.0-flash
+```
+
+3. Restart `uvicorn` (settings are cached).
+4. Ingest a real PDF `drive_file_id` and verify extracted fields in Postgres.
+
 ## Tests
 
 ```bash

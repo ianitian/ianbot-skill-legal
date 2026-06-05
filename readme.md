@@ -1,4 +1,4 @@
-# ianbot-skill-legal v0.0.3
+# ianbot-skill-legal v0.0.4
 **Base document** for product, engineering, DevOps, finance, and legal. Describes what we plan to build, how pieces connect, and what each group needs to decide or provide.
 
 Upgrade plans for Slack bot, "ian-bot", that will reference and answer user queries based on:
@@ -71,6 +71,20 @@ Until `contract_ref` is set for a row, the assistant should treat that payment a
 - [ ] Is **Vertex AI** (Gemini inside our GCP project) required for confidential PDFs, or is an API key acceptable?
 - [ ] Data retention: how long may we keep extracted fields and query logs?
 - [ ] Who may access the bot (planned: **back office + management** allowlist only)?
+
+### Gemini in v0.0.4 — dev path checked in, prod path TBD
+
+**v0.0.4 enables real Gemini extraction** when `GEMINI_ENABLED=true`, using **Google AI Studio** (`GEMINI_BACKEND=studio` + `GEMINI_API_KEY`). This was checked in after local end-to-end testing (Drive download → Gemini → Postgres).
+
+**Risks not fully verified yet:**
+
+- AI Studio API terms, data retention, and whether Google may use API traffic for product improvement are **not signed off** by legal for confidential signed contracts.
+- API keys in local `.env` are fine for dev only; **production must not** rely on long-lived Studio keys in the repo or pods.
+- Model availability and free-tier quotas vary by model (e.g. `gemini-2.0-flash` vs `gemini-2.5-flash-lite`).
+
+**Planned direction:** shift **production ingest** to **Vertex AI** (`GEMINI_BACKEND=vertex`) inside our GCP project, with workload identity on GKE and secrets in Secret Manager. The code includes a Vertex-ready client stub; implementation and legal approval are **still open**.
+
+Until Vertex is approved and wired, treat AI Studio extraction as **local/dev validation only**, not production-ready for sensitive PDFs.
 
 ---
 
@@ -381,7 +395,7 @@ Access control: allowlisted Slack user IDs. Others may still get Drive alerts; t
 
 | Topic | Choices | Decision |
 |--------|---------|----------|
-| Gemini | API key vs Vertex (company cloud) | _TBD_ |
+| Gemini | AI Studio for **local dev** (v0.0.4); **Vertex AI** for prod (legal/IT approval pending) | _dev: Studio; prod: Vertex planned_ |
 | GKE / AlloyDB | Namespace, Ingress host, AlloyDB instance (platform template?) | _TBD_ |
 | Sheet sync schedule | **Apps Script daily trigger** (no Cloud Scheduler / CronJob for v1) | _decided_ |
 | Slack | Extend **ian-bot** vs new bot | _TBD_ |
@@ -426,7 +440,7 @@ tests/         # API smoke tests
 
 ## Versioning
 
-**Current version:** `0.0.3` (also in [`VERSION`](VERSION), `pyproject.toml`, `readme.md` title, and `GET /health` → `version`).
+**Current version:** `0.0.4` (also in [`VERSION`](VERSION), `pyproject.toml`, `readme.md` title, and `GET /health` → `version`).
 
 | Bump | When | How |
 |------|------|-----|
@@ -443,6 +457,12 @@ After enabling hooks, each `git commit` bumps patch and stages `VERSION`, `pypro
 ---
 
 ## Changelog
+
+### v0.0.4
+
+- Gemini extraction (dev): AI Studio API-key backend (`core/gemini_client.py`) wired into `core/extract.py`.
+- `/ingest` now returns `status: error` when Gemini is enabled but missing Drive bytes or API key; `GET /health` includes `gemini_configured`.
+- **Security note:** checked in with Gemini-enabled path for local testing; data-handling risks for confidential PDFs are **not fully verified**. Production is expected to move to **Vertex AI** after legal/IT sign-off (see “Gemini in v0.0.4” above).
 
 ### v0.0.3
 

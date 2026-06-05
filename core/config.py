@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     database_url: Optional[str] = None
     gemini_enabled: bool = False
     gemini_api_key: Optional[str] = None
+    gemini_backend: str = "studio"
+    gemini_model: str = "gemini-2.0-flash"
     google_application_credentials: Optional[str] = None
 
     @property
@@ -22,6 +24,16 @@ class Settings(BaseSettings):
     def drive_configured(self) -> bool:
         path = self.google_application_credentials
         return bool(path and path.strip() and Path(path).is_file())
+
+    @property
+    def gemini_configured(self) -> bool:
+        backend = (self.gemini_backend or "studio").strip().lower()
+        if backend == "studio":
+            return bool(self.gemini_api_key and self.gemini_api_key.strip())
+        if backend == "vertex":
+            # Vertex client not implemented yet; keep configured false until wired.
+            return False
+        return False
 
 
 @lru_cache

@@ -9,6 +9,7 @@ from core import db as db_module
 from core import drive as drive_module
 from core.drive import DriveDownloadError, DriveNotConfiguredError
 from core.extract import extract_contract
+from core.gemini_client import GeminiExtractionError
 from ingest.schemas import IngestRequest, IngestResponse, SyncSheetResponse
 
 router = APIRouter()
@@ -23,6 +24,7 @@ def health() -> dict:
         "database_configured": settings.database_configured,
         "drive_configured": settings.drive_configured,
         "gemini_enabled": settings.gemini_enabled,
+        "gemini_configured": settings.gemini_configured,
     }
 
 
@@ -55,13 +57,36 @@ def ingest(ingest_request: IngestRequest) -> IngestResponse:
             )
     else:
         pdf_bytes = b""
+        if settings.gemini_enabled:
+            return IngestResponse(
+                status="error",
+                drive_file_id=ingest_request.drive_file_id,
+                mode=mode,
+                message="Drive download required for Gemini extraction (set GOOGLE_APPLICATION_CREDENTIALS).",
+            )
         message = "Drive not configured; stub extraction only (empty PDF bytes)."
 
-    fields = extract_contract(
-        pdf_bytes,
-        ingest_request.file_name,
-        gemini_enabled=settings.gemini_enabled,
-    )
+    if settings.gemini_enabled and not settings.gemini_configured:
+        return IngestResponse(
+            status="error",
+            drive_file_id=ingest_request.drive_file_id,
+            mode=mode,
+            message="Gemini enabled but not configured (set GEMINI_API_KEY for studio backend).",
+        )
+
+    try:
+        fields = extract_contract(
+            pdf_bytes,
+            ingest_request.file_name,
+            gemini_enabled=settings.gemini_enabled,
+        )
+    except GeminiExtractionError as exc:
+        return IngestResponse(
+            status="error",
+            drive_file_id=ingest_request.drive_file_id,
+            mode=mode,
+            message=f"Extraction failed: {exc}",
+        )
 
     if settings.database_configured:
         try:

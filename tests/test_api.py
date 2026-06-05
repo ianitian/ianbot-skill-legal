@@ -8,6 +8,7 @@ os.environ.setdefault("INGEST_SECRET", "test-secret")
 
 from core.config import get_settings  # noqa: E402
 from core.drive import DriveDownloadError  # noqa: E402
+from core.gemini_client import GeminiExtractionError  # noqa: E402
 from ingest.api import app  # noqa: E402
 
 client = TestClient(app)
@@ -24,6 +25,7 @@ def test_health():
     data = response.json()
     assert data["status"] == "ok"
     assert isinstance(data["drive_configured"], bool)
+    assert isinstance(data["gemini_configured"], bool)
 
 
 def test_ingest_requires_secret():
@@ -33,6 +35,7 @@ def test_ingest_requires_secret():
 
 def test_ingest_stub(monkeypatch):
     monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", "")
+    monkeypatch.setenv("GEMINI_ENABLED", "false")
     _clear_settings_cache()
 
     response = client.post(
@@ -56,6 +59,7 @@ def test_ingest_downloads_pdf_when_configured(monkeypatch, tmp_path):
     creds_file = tmp_path / "sa.json"
     creds_file.write_text("{}", encoding="utf-8")
     monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", str(creds_file))
+    monkeypatch.setenv("GEMINI_ENABLED", "false")
     _clear_settings_cache()
 
     pdf_bytes = b"%PDF-1.4\n"
@@ -81,6 +85,7 @@ def test_ingest_drive_404(monkeypatch, tmp_path):
     creds_file = tmp_path / "sa.json"
     creds_file.write_text("{}", encoding="utf-8")
     monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", str(creds_file))
+    monkeypatch.setenv("GEMINI_ENABLED", "false")
     _clear_settings_cache()
 
     with patch(
@@ -102,6 +107,59 @@ def test_ingest_drive_404(monkeypatch, tmp_path):
     data = response.json()
     assert data["status"] == "error"
     assert "404" in (data.get("message") or "")
+
+
+def test_ingest_gemini_extraction_error(monkeypatch, tmp_path):
+    creds_file = tmp_path / "sa.json"
+    creds_file.write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", str(creds_file))
+    monkeypatch.setenv("GEMINI_ENABLED", "true")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    _clear_settings_cache()
+
+    pdf_bytes = b"%PDF-1.4\n"
+    with patch("core.drive.download_pdf", return_value=pdf_bytes), patch(
+        "core.extract.extract_contract",
+        side_effect=GeminiExtractionError("Gemini API request failed"),
+    ):
+        response = client.post(
+            "/ingest",
+            headers=HEADERS,
+            json={
+                "drive_file_id": "file-id-3",
+                "file_name": "ACME_Corp_MSA.pdf",
+                "mime_type": "application/pdf",
+            },
+        )
+
+    _clear_settings_cache()
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "error"
+    assert "Extraction failed" in (data.get("message") or "")
+
+
+def test_ingest_gemini_requires_drive(monkeypatch):
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", "")
+    monkeypatch.setenv("GEMINI_ENABLED", "true")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    _clear_settings_cache()
+
+    response = client.post(
+        "/ingest",
+        headers=HEADERS,
+        json={
+            "drive_file_id": "file-id-4",
+            "file_name": "ACME_Corp_MSA.pdf",
+            "mime_type": "application/pdf",
+        },
+    )
+
+    _clear_settings_cache()
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "error"
+    assert "Drive download required" in (data.get("message") or "")
 
 
 def test_sync_sheet_stub():

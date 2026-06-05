@@ -2,7 +2,10 @@ import json
 from pathlib import Path
 from typing import List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
+
+from core.config import get_settings
+from core.gemini_client import GeminiExtractionError, get_gemini_client
 
 PROMPT_PATH = Path(__file__).parent / "prompts" / "extract_contract.txt"
 
@@ -21,7 +24,7 @@ def load_extraction_prompt() -> str:
 
 
 def extract_contract_stub(file_name: str) -> ContractFields:
-    """Placeholder until Gemini + Drive download are wired (Phase 0 credentials)."""
+    """Placeholder when GEMINI_ENABLED=false."""
     stem = Path(file_name).stem.replace("_", " ")
     return ContractFields(
         counterparty=stem[:80] if stem else None,
@@ -33,8 +36,20 @@ def extract_contract_stub(file_name: str) -> ContractFields:
 def extract_contract(pdf_bytes: bytes, file_name: str, *, gemini_enabled: bool) -> ContractFields:
     if not gemini_enabled:
         return extract_contract_stub(file_name)
-    # TODO: call Gemini with pdf_bytes and PROMPT_PATH when API key / Vertex is approved.
-    return extract_contract_stub(file_name)
+
+    if not pdf_bytes:
+        raise GeminiExtractionError("PDF bytes required for Gemini extraction")
+
+    client = get_gemini_client(get_settings())
+    if client is None:
+        raise GeminiExtractionError("Gemini enabled but not configured (set GEMINI_API_KEY)")
+
+    prompt = load_extraction_prompt()
+    try:
+        data = client.extract_contract_json(pdf_bytes, prompt)
+        return ContractFields.model_validate(data)
+    except ValidationError as exc:
+        raise GeminiExtractionError("Gemini JSON does not match contract schema") from exc
 
 
 def fields_to_extraction_json(fields: ContractFields) -> dict:
