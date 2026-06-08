@@ -1,7 +1,7 @@
 import io
-from functools import lru_cache
+import logging
 from pathlib import Path
-from typing import Any, Tuple
+from typing import Any, Optional, Tuple
 
 import google.auth
 from google.auth.credentials import Credentials
@@ -12,6 +12,8 @@ from googleapiclient.http import MediaIoBaseDownload
 from core.config import Settings, get_settings
 
 DRIVE_READONLY_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
+
+logger = logging.getLogger(__name__)
 
 
 class DriveNotConfiguredError(RuntimeError):
@@ -50,16 +52,16 @@ def _credentials_file_path(settings: Settings) -> str:
     return creds_path
 
 
-def _load_drive_credentials(settings: Settings) -> Tuple[Credentials, str]:
-    mode = _resolve_drive_auth_mode(settings)
+def _load_drive_credentials(settings: Settings, mode: Optional[str] = None) -> Tuple[Credentials, str]:
+    resolved_mode = mode or _resolve_drive_auth_mode(settings)
     scopes = [DRIVE_READONLY_SCOPE]
 
-    if mode == "file":
+    if resolved_mode == "file":
         creds, _project = google.auth.load_credentials_from_file(
             _credentials_file_path(settings),
             scopes=scopes,
         )
-        return creds, mode
+        return creds, resolved_mode
 
     try:
         creds, _project = google.auth.default(scopes=scopes)
@@ -71,18 +73,27 @@ def _load_drive_credentials(settings: Settings) -> Tuple[Credentials, str]:
 
     if hasattr(creds, "with_scopes_if_required"):
         creds = creds.with_scopes_if_required(scopes)
-    return creds, mode
+    return creds, resolved_mode
 
 
-@lru_cache
-def _get_drive_service() -> Any:
-    settings = get_settings()
-    creds, _mode = _load_drive_credentials(settings)
+def _build_drive_service(settings: Settings, mode: str) -> Any:
+    creds, _resolved = _load_drive_credentials(settings, mode=mode)
     return build("drive", "v3", credentials=creds, cache_discovery=False)
 
 
 def clear_drive_service_cache() -> None:
-    _get_drive_service.cache_clear()
+    """No-op retained for tests that clear settings between cases."""
+    return None
+
+
+def _download_pdf_with_service(drive: Any, drive_file_id: str) -> bytes:
+    request = drive.files().get_media(fileId=drive_file_id, supportsAllDrives=True)
+    buf = io.BytesIO()
+    downloader = MediaIoBaseDownload(buf, request)
+    done = False
+    while not done:
+        _, done = downloader.next_chunk()
+    return buf.getvalue()
 
 
 def download_pdf(drive_file_id: str) -> bytes:
@@ -91,22 +102,49 @@ def download_pdf(drive_file_id: str) -> bytes:
     if not settings.drive_configured:
         raise DriveNotConfiguredError("Drive credentials are not configured")
 
-    try:
-        drive = _get_drive_service()
-        request = drive.files().get_media(fileId=drive_file_id, supportsAllDrives=True)
-        buf = io.BytesIO()
-        downloader = MediaIoBaseDownload(buf, request)
-        done = False
-        while not done:
-            _, done = downloader.next_chunk()
-        data = buf.getvalue()
-    except HttpError as exc:
-        status = exc.resp.status if exc.resp else 0
-        raise DriveDownloadError(status, f"Drive API error for file {drive_file_id}") from exc
+    primary_mode = _resolve_drive_auth_mode(settings)
+    modes_to_try = [primary_mode]
+    if (
+        primary_mode == "adc"
+        and settings.drive_sa_fallback_available
+        and "file" not in modes_to_try
+    ):
+        modes_to_try.append("file")
 
-    if not data:
-        raise DriveDownloadError(0, "Downloaded file is empty")
-    if data[:4] != b"%PDF":
-        raise DriveDownloadError(0, "Downloaded content is not a PDF")
+    last_http_error: Optional[HttpError] = None
+    for mode in modes_to_try:
+        try:
+            drive = _build_drive_service(settings, mode)
+            data = _download_pdf_with_service(drive, drive_file_id)
+        except HttpError as exc:
+            status = exc.resp.status if exc.resp else 0
+            if (
+                status == 403
+                and mode == "adc"
+                and len(modes_to_try) > 1
+            ):
+                logger.warning(
+                    "Drive ADC returned 403 for %s; retrying with SA file (DRIVE_DEBUG_SA_FALLBACK)",
+                    drive_file_id,
+                )
+                last_http_error = exc
+                continue
+            raise DriveDownloadError(status, f"Drive API error for file {drive_file_id}") from exc
 
-    return data
+        if mode == "file" and primary_mode == "adc" and len(modes_to_try) > 1:
+            logger.warning(
+                "Drive download succeeded via SA fallback for %s (local debug only)",
+                drive_file_id,
+            )
+
+        if not data:
+            raise DriveDownloadError(0, "Downloaded file is empty")
+        if data[:4] != b"%PDF":
+            raise DriveDownloadError(0, "Downloaded content is not a PDF")
+        return data
+
+    if last_http_error is not None:
+        status = last_http_error.resp.status if last_http_error.resp else 0
+        raise DriveDownloadError(status, f"Drive API error for file {drive_file_id}") from last_http_error
+
+    raise DriveDownloadError(0, f"Drive download failed for file {drive_file_id}")

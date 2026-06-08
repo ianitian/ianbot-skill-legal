@@ -52,6 +52,22 @@ gcloud config set project apps-staging
 
 `DRIVE_AUTH=auto` (default) uses the credentials file when `GOOGLE_APPLICATION_CREDENTIALS` points at an existing file; otherwise ADC.
 
+### Local hybrid (ADC + SA fallback)
+
+Use while Vertex runs on gcloud ADC but Drive API is not yet enabled on the quota project (e.g. `apps-staging-wvisc`):
+
+```bash
+DRIVE_AUTH=adc
+DRIVE_DEBUG_SA_FALLBACK=yes
+GOOGLE_APPLICATION_CREDENTIALS=/path/to/ingest-sa.json
+GEMINI_BACKEND=vertex
+GOOGLE_CLOUD_PROJECT=apps-staging-wvisc
+```
+
+Unset `GOOGLE_APPLICATION_CREDENTIALS` in your **shell** before starting uvicorn so the process does not pick up the SA path for Vertex ADC (the app reads the path from `.env` for Drive fallback only).
+
+On Drive **403**, the app retries once with the SA key file. **Do not enable `DRIVE_DEBUG_SA_FALLBACK` in production.**
+
 Re-test with a real `drive_file_id` via curl, the helper script, or Apps Script `testPokeIngestWebhook`:
 
 ```bash

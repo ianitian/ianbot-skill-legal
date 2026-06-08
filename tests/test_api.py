@@ -16,6 +16,7 @@ HEADERS = {"X-Ingest-Secret": "test-secret"}
 
 
 def _clear_settings_cache() -> None:
+    os.environ["INGEST_SECRET"] = "test-secret"
     get_settings.cache_clear()
     clear_drive_service_cache()
 
@@ -29,6 +30,7 @@ def test_health():
     assert isinstance(data["gemini_configured"], bool)
     assert "gemini_backend" in data
     assert "drive_auth" in data
+    assert "drive_sa_fallback" in data
 
 
 def test_health_includes_gemini_backend():

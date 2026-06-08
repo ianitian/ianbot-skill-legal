@@ -2,6 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -16,7 +17,15 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-2.0-flash"
     google_application_credentials: Optional[str] = None
     drive_auth: str = "auto"
+    drive_debug_sa_fallback: bool = False
     google_cloud_project: Optional[str] = None
+
+    @field_validator("drive_debug_sa_fallback", mode="before")
+    @classmethod
+    def _parse_drive_debug_sa_fallback(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip().lower() in {"yes", "true", "1"}
+        return value
     google_cloud_location: Optional[str] = None
 
     @property
@@ -36,6 +45,10 @@ class Settings(BaseSettings):
     def _credentials_file_exists(self) -> bool:
         path = self.google_application_credentials
         return bool(path and path.strip() and Path(path).is_file())
+
+    @property
+    def drive_sa_fallback_available(self) -> bool:
+        return self.drive_debug_sa_fallback and self._credentials_file_exists
 
     @property
     def drive_configured(self) -> bool:

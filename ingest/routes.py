@@ -24,6 +24,7 @@ def health() -> dict:
         "database_configured": settings.database_configured,
         "drive_configured": settings.drive_configured,
         "drive_auth": settings.drive_auth_mode,
+        "drive_sa_fallback": settings.drive_sa_fallback_available,
         "gemini_enabled": settings.gemini_enabled,
         "gemini_configured": settings.gemini_configured,
         "gemini_backend": settings.gemini_backend,
