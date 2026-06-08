@@ -5,7 +5,7 @@ from typing import List, Optional
 from pydantic import BaseModel, Field, ValidationError
 
 from core.config import get_settings
-from core.gemini_client import GeminiExtractionError, get_gemini_client
+from core.gemini_client import GeminiExtractionError, gemini_not_configured_message, get_gemini_client
 
 PROMPT_PATH = Path(__file__).parent / "prompts" / "extract_contract.txt"
 
@@ -40,9 +40,10 @@ def extract_contract(pdf_bytes: bytes, file_name: str, *, gemini_enabled: bool) 
     if not pdf_bytes:
         raise GeminiExtractionError("PDF bytes required for Gemini extraction")
 
-    client = get_gemini_client(get_settings())
+    settings = get_settings()
+    client = get_gemini_client(settings)
     if client is None:
-        raise GeminiExtractionError("Gemini enabled but not configured (set GEMINI_API_KEY)")
+        raise GeminiExtractionError(gemini_not_configured_message(settings))
 
     prompt = load_extraction_prompt()
     try:

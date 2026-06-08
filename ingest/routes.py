@@ -9,7 +9,7 @@ from core import db as db_module
 from core import drive as drive_module
 from core.drive import DriveDownloadError, DriveNotConfiguredError
 from core.extract import extract_contract
-from core.gemini_client import GeminiExtractionError
+from core.gemini_client import GeminiExtractionError, gemini_not_configured_message
 from ingest.schemas import IngestRequest, IngestResponse, SyncSheetResponse
 
 router = APIRouter()
@@ -23,8 +23,10 @@ def health() -> dict:
         "version": get_app_version(),
         "database_configured": settings.database_configured,
         "drive_configured": settings.drive_configured,
+        "drive_auth": settings.drive_auth_mode,
         "gemini_enabled": settings.gemini_enabled,
         "gemini_configured": settings.gemini_configured,
+        "gemini_backend": settings.gemini_backend,
     }
 
 
@@ -62,7 +64,10 @@ def ingest(ingest_request: IngestRequest) -> IngestResponse:
                 status="error",
                 drive_file_id=ingest_request.drive_file_id,
                 mode=mode,
-                message="Drive download required for Gemini extraction (set GOOGLE_APPLICATION_CREDENTIALS).",
+                message=(
+                    "Drive download required for Gemini extraction "
+                    "(set GOOGLE_APPLICATION_CREDENTIALS for file auth, or DRIVE_AUTH=adc with gcloud ADC)."
+                ),
             )
         message = "Drive not configured; stub extraction only (empty PDF bytes)."
 
@@ -71,7 +76,7 @@ def ingest(ingest_request: IngestRequest) -> IngestResponse:
             status="error",
             drive_file_id=ingest_request.drive_file_id,
             mode=mode,
-            message="Gemini enabled but not configured (set GEMINI_API_KEY for studio backend).",
+            message=gemini_not_configured_message(settings),
         )
 
     try:

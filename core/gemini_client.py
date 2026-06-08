@@ -32,6 +32,25 @@ def parse_json_response(text: str) -> dict:
     return data
 
 
+def _generate_from_pdf(client: genai.Client, model: str, pdf_bytes: bytes, prompt: str) -> dict:
+    try:
+        response = client.models.generate_content(
+            model=model,
+            contents=[
+                prompt,
+                types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"),
+            ],
+        )
+    except Exception as exc:  # noqa: BLE001 — surface as extraction error
+        raise GeminiExtractionError("Gemini API request failed") from exc
+
+    text = response.text
+    if not text or not text.strip():
+        raise GeminiExtractionError("Gemini returned an empty response")
+
+    return parse_json_response(text)
+
+
 class StudioGeminiClient:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
@@ -41,30 +60,27 @@ class StudioGeminiClient:
         if not api_key or not api_key.strip():
             raise GeminiExtractionError("GEMINI_API_KEY is not set")
 
-        try:
-            client = genai.Client(api_key=api_key)
-            response = client.models.generate_content(
-                model=self._settings.gemini_model,
-                contents=[
-                    prompt,
-                    types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"),
-                ],
-            )
-        except Exception as exc:  # noqa: BLE001 — surface as extraction error
-            raise GeminiExtractionError("Gemini API request failed") from exc
-
-        text = response.text
-        if not text or not text.strip():
-            raise GeminiExtractionError("Gemini returned an empty response")
-
-        return parse_json_response(text)
+        client = genai.Client(api_key=api_key)
+        return _generate_from_pdf(client, self._settings.gemini_model, pdf_bytes, prompt)
 
 
 class VertexGeminiClient:
+    def __init__(self, settings: Settings) -> None:
+        self._settings = settings
+        project = settings.google_cloud_project
+        location = settings.google_cloud_location
+        if not project or not project.strip():
+            raise GeminiExtractionError("GOOGLE_CLOUD_PROJECT is not set")
+        if not location or not location.strip():
+            raise GeminiExtractionError("GOOGLE_CLOUD_LOCATION is not set")
+
     def extract_contract_json(self, pdf_bytes: bytes, prompt: str) -> dict:
-        raise NotImplementedError(
-            "Vertex Gemini backend is not implemented yet; set GEMINI_BACKEND=studio for local dev"
+        client = genai.Client(
+            vertexai=True,
+            project=self._settings.google_cloud_project,
+            location=self._settings.google_cloud_location,
         )
+        return _generate_from_pdf(client, self._settings.gemini_model, pdf_bytes, prompt)
 
 
 def get_gemini_client(settings: Optional[Settings] = None) -> Optional[GeminiExtractionClient]:
@@ -77,6 +93,18 @@ def get_gemini_client(settings: Optional[Settings] = None) -> Optional[GeminiExt
         return StudioGeminiClient(settings)
 
     if backend == "vertex":
-        return VertexGeminiClient()
+        if not settings.gemini_configured:
+            return None
+        return VertexGeminiClient(settings)
 
     raise GeminiExtractionError(f"Unknown GEMINI_BACKEND: {settings.gemini_backend}")
+
+
+def gemini_not_configured_message(settings: Settings) -> str:
+    backend = (settings.gemini_backend or "studio").strip().lower()
+    if backend == "vertex":
+        return (
+            "Gemini enabled but not configured for vertex "
+            "(set GOOGLE_CLOUD_PROJECT and GOOGLE_CLOUD_LOCATION; use ADC via service account)"
+        )
+    return "Gemini enabled but not configured (set GEMINI_API_KEY for studio backend)"

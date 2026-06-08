@@ -1,4 +1,4 @@
-# ianbot-skill-legal v0.0.4
+# ianbot-skill-legal v0.0.6
 **Base document** for product, engineering, DevOps, finance, and legal. Describes what we plan to build, how pieces connect, and what each group needs to decide or provide.
 
 Upgrade plans for Slack bot, "ian-bot", that will reference and answer user queries based on:
@@ -72,19 +72,24 @@ Until `contract_ref` is set for a row, the assistant should treat that payment a
 - [ ] Data retention: how long may we keep extracted fields and query logs?
 - [ ] Who may access the bot (planned: **back office + management** allowlist only)?
 
-### Gemini in v0.0.4 — dev path checked in, prod path TBD
+### Gemini extraction — Studio (dev) and Vertex (prod)
 
-**v0.0.4 enables real Gemini extraction** when `GEMINI_ENABLED=true`, using **Google AI Studio** (`GEMINI_BACKEND=studio` + `GEMINI_API_KEY`). This was checked in after local end-to-end testing (Drive download → Gemini → Postgres).
+**v0.0.4+ enables real Gemini extraction** when `GEMINI_ENABLED=true`.
+
+| Backend | Env | Use |
+|---------|-----|-----|
+| `studio` | `GEMINI_API_KEY` | Local dev / validation (AI Studio) |
+| `vertex` | `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION` + ADC | Production ingest inside GCP |
+
+**v0.0.5 implements the Vertex client** (`VertexGeminiClient` via `google-genai` with `vertexai=True`). Flip `GEMINI_BACKEND=vertex` once Vertex AI API, billing, and IAM (`roles/aiplatform.user` on the ingest SA) are ready.
 
 **Risks not fully verified yet:**
 
-- AI Studio API terms, data retention, and whether Google may use API traffic for product improvement are **not signed off** by legal for confidential signed contracts.
+- AI Studio API terms and data retention are **not signed off** by legal for confidential signed contracts.
 - API keys in local `.env` are fine for dev only; **production must not** rely on long-lived Studio keys in the repo or pods.
-- Model availability and free-tier quotas vary by model (e.g. `gemini-2.0-flash` vs `gemini-2.5-flash-lite`).
+- Vertex legal/IT approval for confidential PDFs is still an open question (see checklist above).
 
-**Planned direction:** shift **production ingest** to **Vertex AI** (`GEMINI_BACKEND=vertex`) inside our GCP project, with workload identity on GKE and secrets in Secret Manager. The code includes a Vertex-ready client stub; implementation and legal approval are **still open**.
-
-Until Vertex is approved and wired, treat AI Studio extraction as **local/dev validation only**, not production-ready for sensitive PDFs.
+Until Vertex is approved and enabled in GCP, treat AI Studio extraction as **local/dev validation only**, not production-ready for sensitive PDFs.
 
 ---
 
@@ -395,7 +400,7 @@ Access control: allowlisted Slack user IDs. Others may still get Drive alerts; t
 
 | Topic | Choices | Decision |
 |--------|---------|----------|
-| Gemini | AI Studio for **local dev** (v0.0.4); **Vertex AI** for prod (legal/IT approval pending) | _dev: Studio; prod: Vertex planned_ |
+| Gemini | AI Studio for **local dev**; **Vertex AI** for prod (`GEMINI_BACKEND=vertex`, v0.0.5) | _dev: Studio; prod: Vertex when GCP + legal ready_ |
 | GKE / AlloyDB | Namespace, Ingress host, AlloyDB instance (platform template?) | _TBD_ |
 | Sheet sync schedule | **Apps Script daily trigger** (no Cloud Scheduler / CronJob for v1) | _decided_ |
 | Slack | Extend **ian-bot** vs new bot | _TBD_ |
@@ -440,7 +445,7 @@ tests/         # API smoke tests
 
 ## Versioning
 
-**Current version:** `0.0.4` (also in [`VERSION`](VERSION), `pyproject.toml`, `readme.md` title, and `GET /health` → `version`).
+**Current version:** `0.0.5` (also in [`VERSION`](VERSION), `pyproject.toml`, `readme.md` title, and `GET /health` → `version`).
 
 | Bump | When | How |
 |------|------|-----|
@@ -457,6 +462,12 @@ After enabling hooks, each `git commit` bumps patch and stages `VERSION`, `pypro
 ---
 
 ## Changelog
+
+### v0.0.5
+
+- Vertex Gemini extraction: `VertexGeminiClient` using `google-genai` with `vertexai=True`; config via `GOOGLE_CLOUD_PROJECT` and `GOOGLE_CLOUD_LOCATION`.
+- `gemini_configured` and ingest error messages are backend-aware (studio vs vertex); `GET /health` includes `gemini_backend`.
+- Docs: Vertex setup in `docs/DEV.md` and `.env.example`.
 
 ### v0.0.4
 

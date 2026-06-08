@@ -26,7 +26,7 @@ docker compose up -d postgres
 uvicorn ingest.api:app --reload --port 8000
 ```
 
-- Health: http://localhost:8000/health (`drive_configured` is true when `GOOGLE_APPLICATION_CREDENTIALS` points at a service account JSON file)
+- Health: http://localhost:8000/health (`drive_configured`, `drive_auth` — `file` or `adc`)
 - Ingest: `curl -X POST http://localhost:8000/ingest \
   -H "Content-Type: application/json" \
   -H "X-Ingest-Secret: change-me-local-only" \
@@ -34,9 +34,35 @@ uvicorn ingest.api:app --reload --port 8000
 
 With `DATABASE_URL` set (see `.env.example`), ingest writes to local Postgres.
 
-When `GOOGLE_APPLICATION_CREDENTIALS` is set, `/ingest` downloads the PDF from Drive **in memory** (no file written to disk), then runs extraction. Re-test with a real `drive_file_id` via curl or Apps Script `testPokeIngestWebhook`.
+When Drive is configured, `/ingest` downloads the PDF from Drive **in memory** (no file written to disk), then runs extraction.
 
-### Gemini extraction (dev)
+**Drive auth (pick one):**
+
+```bash
+# Option A — service account key or WIF credentials file (legacy local)
+DRIVE_AUTH=file
+GOOGLE_APPLICATION_CREDENTIALS=/path/to/credentials.json
+
+# Option B — gcloud Application Default Credentials (WIF / user login)
+DRIVE_AUTH=adc
+# GOOGLE_APPLICATION_CREDENTIALS unset
+gcloud auth application-default login
+gcloud config set project apps-staging
+```
+
+`DRIVE_AUTH=auto` (default) uses the credentials file when `GOOGLE_APPLICATION_CREDENTIALS` points at an existing file; otherwise ADC.
+
+Re-test with a real `drive_file_id` via curl, the helper script, or Apps Script `testPokeIngestWebhook`:
+
+```bash
+./scripts/test_ingest.py --health \
+  "https://drive.google.com/file/d/YOUR_FILE_ID/view" \
+  "ACME_Contract.pdf"
+```
+
+The script reads `INGEST_SECRET` from `.env` (optional `INGEST_API_URL`, default `http://localhost:8000`).
+
+### Gemini extraction (dev — AI Studio)
 
 1. Create an API key in **Google AI Studio**: `https://aistudio.google.com/apikey`
 2. Set in `.env`:
@@ -45,11 +71,32 @@ When `GOOGLE_APPLICATION_CREDENTIALS` is set, `/ingest` downloads the PDF from D
 GEMINI_ENABLED=true
 GEMINI_API_KEY=your-key-here
 GEMINI_BACKEND=studio
-GEMINI_MODEL=gemini-2.0-flash
+GEMINI_MODEL=gemini-2.5-flash-lite
 ```
 
 3. Restart `uvicorn` (settings are cached).
 4. Ingest a real PDF `drive_file_id` and verify extracted fields in Postgres.
+
+### Vertex extraction (prod path)
+
+Use when GCP Vertex AI is enabled and legal approves processing confidential PDFs in-project.
+
+1. In GCP: enable **Vertex AI API**, confirm billing, grant the ingest service account **Vertex AI User** (`roles/aiplatform.user`).
+2. Set in `.env`:
+
+```bash
+GEMINI_ENABLED=true
+GEMINI_BACKEND=vertex
+GEMINI_MODEL=gemini-2.5-flash-lite
+GOOGLE_CLOUD_PROJECT=your-gcp-project
+GOOGLE_CLOUD_LOCATION=us-central1
+GOOGLE_APPLICATION_CREDENTIALS=/path/to/ingest-sa.json
+```
+
+3. Restart `uvicorn`. `GET /health` should show `gemini_configured: true` and `gemini_backend: vertex`.
+4. Re-ingest a PDF and verify extracted fields in Postgres.
+
+Locally, ADC comes from `GOOGLE_APPLICATION_CREDENTIALS` (same SA JSON as Drive). On GKE, workload identity provides ADC without a JSON file on the pod.
 
 ## Tests
 
