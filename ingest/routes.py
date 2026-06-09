@@ -32,7 +32,20 @@ def health() -> dict:
         "bot_slack_configured": settings.bot_slack_configured,
         "bot_telegram_configured": settings.bot_telegram_configured,
         "telegram_group_gating_configured": settings.telegram_group_gating_configured,
+        "bot_faq_enabled": settings.bot_faq_enabled,
+        "bot_faq_configured": settings.bot_faq_configured,
+        "bot_faq_count": settings.bot_faq_count,
+        "bot_telegram_use_polling": settings.bot_telegram_use_polling,
+        "bot_telegram_polling_active": _telegram_polling_active(settings),
     }
+
+
+def _telegram_polling_active(settings) -> bool:
+    if not settings.bot_telegram_use_polling:
+        return False
+    from bot.telegram_polling import polling_is_active
+
+    return polling_is_active()
 
 
 @router.post("/ingest", response_model=IngestResponse, dependencies=[Depends(verify_ingest_secret)])

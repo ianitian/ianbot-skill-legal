@@ -1,0 +1,73 @@
+version: 1
+faqs:
+  - id: capabilities
+    question: "What can you do?"
+    triggers:
+      - what can you do
+      - what are you able to do
+      - what do you do
+      - help
+    answer: |
+      I can answer common questions about how to use this bot.
+      I am slowly learning how to handle questions on behalf of Won, using fuzzy logic (rapidfuzz) for now.
+
+  - id: limitations
+    question: "What can you not do?"
+    triggers:
+      - what can you not do
+      - what can't you do
+      - what can you not
+      - limitations
+      - what are your limits
+    answer: |
+      I cannot give legal advice, access contracts not in our catalog,
+      or answer questions outside my FAQ list yet.
+
+  - id: how_to_ask
+    question: "How do I ask you a question?"
+    triggers:
+      - how do i ask
+      - how to use
+      - how do i use this bot
+      - how do i talk to you
+    answer: |
+      In an allowlisted group chat, @mention me or use a /command@bot.
+      Private DMs are disabled; please ask in the group.
+
+  - id: legal_clearance
+    question: "Who should I talk to for legal clearance?"
+    triggers:
+      - legal clearance
+      - talk to won
+      - who do i ask for legal
+      - actual legal advice
+    answer: |
+      For actual legal clearance or binding decisions, please discuss with Won.
+      I provide general internal guidance only as starting point.
+
+  - id: data_handling
+    question: "How is my data handled?"
+    triggers:
+      - how is my data handled
+      - data handling
+      - privacy
+      - where is my data
+      - chat history
+      - chat data
+      - chat secure
+      - is it secure
+      - what do you do with this chat data
+      - what happens to my questions
+    answer: |
+      Questions are handled inside secure company infrastructure and environment.
+      No data will be sent to external services for training purposes.
+
+  - id: ping_help
+    question: "What commands do you know?"
+    triggers:
+      - what commands
+      - ping help
+      - do you know ping
+    answer: |
+      Try ping (or /ping) for pong, and hello (or /hello) for a greeting.
+      For other topics, ask a question and I will try to match it to an FAQ.

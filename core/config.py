@@ -34,6 +34,31 @@ class Settings(BaseSettings):
     telegram_webhook_secret: Optional[str] = None
     telegram_allowed_chat_ids: str = ""
     telegram_bot_username: Optional[str] = None
+    bot_faq_enabled: bool = False
+    bot_faq_path: str = "bot/content/faqs.yaml"
+    bot_faq_min_score: int = 80
+    bot_telegram_use_polling: bool = False
+
+    @field_validator("bot_telegram_use_polling", mode="before")
+    @classmethod
+    def _parse_bot_telegram_use_polling(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip().lower() in {"yes", "true", "1"}
+        return value
+
+    @field_validator("bot_faq_enabled", mode="before")
+    @classmethod
+    def _parse_bot_faq_enabled(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip().lower() in {"yes", "true", "1"}
+        return value
+
+    @field_validator("bot_faq_min_score", mode="before")
+    @classmethod
+    def _parse_bot_faq_min_score(cls, value: object) -> object:
+        if isinstance(value, str) and value.strip():
+            return int(value.strip())
+        return value
 
     @property
     def database_configured(self) -> bool:
@@ -116,6 +141,18 @@ class Settings(BaseSettings):
     def telegram_group_gating_configured(self) -> bool:
         username = (self.telegram_bot_username or "").strip().lstrip("@")
         return bool(self.telegram_allowed_chat_ids_set and username)
+
+    @property
+    def bot_faq_count(self) -> int:
+        if not self.bot_faq_enabled:
+            return 0
+        from core.bot_faq import load_faq_catalog
+
+        return load_faq_catalog(self.bot_faq_path).count
+
+    @property
+    def bot_faq_configured(self) -> bool:
+        return self.bot_faq_enabled and self.bot_faq_count > 0
 
 
 @lru_cache

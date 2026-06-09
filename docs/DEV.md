@@ -147,7 +147,7 @@ TELEGRAM_ALLOWED_CHAT_IDS=-1001234567890
 TELEGRAM_BOT_USERNAME=legallywon_bot
 ```
 
-`GET /health` reports `bot_platforms`, `bot_slack_configured`, `bot_telegram_configured`, and `telegram_group_gating_configured`.
+`GET /health` reports `bot_platforms`, `bot_slack_configured`, `bot_telegram_configured`, `telegram_group_gating_configured`, and FAQ fields (`bot_faq_enabled`, `bot_faq_configured`, `bot_faq_count`).
 
 **Telegram group gating:** DMs are ignored. Only `group` / `supergroup` chats listed in `TELEGRAM_ALLOWED_CHAT_IDS` are handled, and the message must **@mention** the bot (`TELEGRAM_BOT_USERNAME`). To discover a group chat id: `@mention` the bot once, then check server logs for `non-allowlisted chat_id=...` and add that id to `.env`.
 
@@ -159,9 +159,33 @@ TELEGRAM_BOT_USERNAME=legallywon_bot
 2. Tunnel: `ngrok http 8000`
 3. **Slack:** App → Event Subscriptions → Request URL `https://<ngrok>/webhooks/slack/events` (needs `SLACK_SIGNING_SECRET`). Subscribe to `message.im` or bot DMs as needed.
 4. **Telegram:** `curl "https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://<ngrok>/webhooks/telegram/<TELEGRAM_WEBHOOK_SECRET>"`
-5. In an allowlisted group: `@legallywon_bot ping` → `pong`; `@legallywon_bot hello` → `Hello, <name>`
+5. In an allowlisted group: `@legallywon_bot ping` → `pong`; `@legallywon_bot hello` → `Hello, <name>`; `@legallywon_bot about` → build summary (version, handler status, Indexed DB based Q&A line)
 
 Slack interactivity URL (stub, returns 200): `https://<ngrok>/webhooks/slack/interactions`
+
+### FAQ layer (A1.5 — rapidfuzz)
+
+Enable scripted answers in `.env`:
+
+```bash
+BOT_FAQ_ENABLED=true
+BOT_FAQ_PATH=bot/content/faqs.yaml
+BOT_FAQ_MIN_SCORE=80
+```
+
+Edit `bot/content/faqs.yaml` to add FAQs (`id`, `question`, `triggers`, `answer`). Restart uvicorn after `.env` changes.
+
+With FAQ enabled, `@legallywon_bot what can you do` should match the `capabilities` entry (disclaimer prefix + answer). Unknown questions get the same build summary as `about` (handler `fallback`) until A2 (Vertex) and B1 (Indexed DB based Q&A).
+
+Counsel observer feed (A1.6) is documented in [bot/README.md](../bot/README.md) — dev uses one Telegram bot; live will split Q&A bot vs ian-bot audit to Slack.
+
+**Telegram local dev — polling vs webhook:** ngrok often fails to receive Telegram webhook traffic (`91.108.x.x` never hits uvicorn). Use long-polling instead:
+
+```bash
+BOT_TELEGRAM_USE_POLLING=true
+```
+
+Restart uvicorn; the app deletes the webhook and polls `getUpdates` in the background. ngrok is only needed for Slack or webhook testing, not Telegram inbound in polling mode.
 
 See [bot/README.md](../bot/README.md) for the full launch ladder (A2+).
 

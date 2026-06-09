@@ -233,14 +233,15 @@ def test_telegram_echo_with_mention(monkeypatch):
     _clear_caches()
 
 
-def test_telegram_unknown_command_returns_toddler_message(monkeypatch):
+def test_telegram_unknown_command_returns_about_fallback(monkeypatch):
     _enable_telegram(monkeypatch)
     body = json.dumps(_telegram_group_payload("what is a contract?", update_id=44)).encode()
     with patch("bot.router.send_telegram_reply") as mock_send:
         client.post(f"/webhooks/telegram/{_TEST_TELEGRAM_WEBHOOK_SECRET}", content=body)
         reply = mock_send.call_args[0][2]
-        assert "toddler" in reply.text
-        assert "ping and hello" in reply.text
+        assert reply.handler == "fallback"
+        assert "ianbot-api v" in reply.text
+        assert "Indexed DB based Q&A: not enabled" in reply.text
     _clear_caches()
 
 
@@ -356,6 +357,34 @@ def test_telegram_text_mention_hello(monkeypatch):
     _clear_caches()
 
 
+def test_telegram_reply_to_bot_accepted_without_mention(monkeypatch):
+    from bot.adapters.telegram import is_reply_to_bot, parse_telegram_payload
+    from core.config import get_settings
+
+    _enable_telegram(monkeypatch)
+    body = json.dumps(
+        {
+            "update_id": 60,
+            "message": {
+                "text": "ping",
+                "reply_to_message": {
+                    "message_id": 43,
+                    "from": {"id": 8932810283, "is_bot": True, "username": "testbot"},
+                },
+                "chat": {"id": int(_TEST_TG_CHAT_ID), "type": "group"},
+                "from": {"id": 7, "first_name": "Ada"},
+            },
+        }
+    ).encode()
+    assert is_reply_to_bot(json.loads(body)["message"], "testbot") is True
+
+    settings = get_settings()
+    event = parse_telegram_payload(body, settings)
+    assert event is not None
+    assert event.text == "ping"
+    _clear_caches()
+
+
 def test_telegram_mention_helpers():
     from bot.adapters.telegram import message_addresses_bot, normalize_group_message_text
 
@@ -370,9 +399,35 @@ def test_telegram_mention_helpers():
     assert normalize_group_message_text(cmd, cmd_entities, "testbot") == "/ping"
 
 
+def test_telegram_text_mention_by_bot_id_without_username():
+    from bot.adapters.telegram import message_addresses_bot, normalize_group_message_text
+
+    text = "won-bot ping"
+    entities = [
+        {
+            "offset": 0,
+            "length": 7,
+            "type": "text_mention",
+            "user": {"id": 8932810283, "is_bot": True, "first_name": "won-bot"},
+        }
+    ]
+    assert message_addresses_bot(text, entities, "legallywon_bot", "8932810283") is True
+    assert normalize_group_message_text(text, entities, "legallywon_bot", "8932810283") == "ping"
+
+
+def test_telegram_plain_text_mention_fallback():
+    from bot.adapters.telegram import message_addresses_bot, normalize_group_message_text
+
+    text = "@legallywon_bot ping"
+    assert message_addresses_bot(text, [], "legallywon_bot") is True
+    assert normalize_group_message_text(text, [], "legallywon_bot") == "ping"
+
+
 def test_echo_handler_unit():
-    from bot.handlers.echo import handle_echo
+    from bot.handlers.dispatch import dispatch_message
+    from bot.handlers.echo import format_about_reply, handle_echo
     from bot.schemas import BotEvent
+    from core.config import get_settings
 
     event = BotEvent(
         platform="slack",
@@ -389,8 +444,57 @@ def test_echo_handler_unit():
     event.user_name = "Ian"
     assert handle_echo(event).text == "Hello, Ian"
 
+    event.text = "about"
+    about_reply = handle_echo(event)
+    assert about_reply is not None
+    assert about_reply.handler == "echo"
+    assert about_reply.text == format_about_reply()
+    assert about_reply.handler_metadata["command"] == "about"
+
+    event.text = "/version"
+    version_reply = handle_echo(event)
+    assert version_reply is not None
+    assert version_reply.handler == "echo"
+    assert version_reply.text == format_about_reply()
+
     event.text = "help"
-    assert "toddler" in handle_echo(event).text
+    assert handle_echo(event) is None
 
     event.text = "   "
     assert handle_echo(event) is None
+
+    settings = get_settings()
+    event.text = "xyzzy"
+    fallback = dispatch_message(settings, event)
+    assert fallback is not None
+    assert fallback.handler == "fallback"
+    assert fallback.text == format_about_reply()
+
+
+def test_telegram_faq_match_when_enabled(monkeypatch):
+    _enable_telegram(monkeypatch)
+    monkeypatch.setenv("BOT_FAQ_ENABLED", "true")
+    _clear_caches()
+    body = json.dumps(_telegram_group_payload("what can you do", update_id=50)).encode()
+    with patch("bot.router.send_telegram_reply") as mock_send:
+        client.post(f"/webhooks/telegram/{_TEST_TELEGRAM_WEBHOOK_SECRET}", content=body)
+        mock_send.assert_called_once()
+        reply = mock_send.call_args[0][2]
+        assert reply.handler == "faq"
+        assert "WIP / general advice only" in reply.text
+        assert reply.handler_metadata["faq_id"] == "capabilities"
+    _clear_caches()
+
+
+def test_telegram_unknown_still_fallback_when_faq_disabled(monkeypatch):
+    _enable_telegram(monkeypatch)
+    monkeypatch.setenv("BOT_FAQ_ENABLED", "false")
+    _clear_caches()
+    body = json.dumps(_telegram_group_payload("what can you do", update_id=51)).encode()
+    with patch("bot.router.send_telegram_reply") as mock_send:
+        client.post(f"/webhooks/telegram/{_TEST_TELEGRAM_WEBHOOK_SECRET}", content=body)
+        reply = mock_send.call_args[0][2]
+        assert reply.handler == "fallback"
+        assert "ianbot-api v" in reply.text
+        assert "Indexed DB based Q&A: not enabled" in reply.text
+    _clear_caches()

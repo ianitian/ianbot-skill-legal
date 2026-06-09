@@ -1,4 +1,4 @@
-# ianbot-skill-legal v0.0.8
+# ianbot-skill-legal v0.1.1
 **Base document** for product, engineering, DevOps, finance, and legal. Describes what we plan to build, how pieces connect, and what each group needs to decide or provide.
 
 Upgrade plans for Slack bot, "ian-bot", that will reference and answer user queries based on:
@@ -6,12 +6,13 @@ Upgrade plans for Slack bot, "ian-bot", that will reference and answer user quer
 - **Signed contracts** (PDFs in a Google Drive folder tree), and
 - **Payments** (rows in a finance Google Sheet).
 
-The system keeps a **searchable catalog in Postgres** (a normal database) and uses **Google Gemini** to read contracts once and to write answers—we are **not training a custom AI model**. When new files or rows appear, we **refresh the catalog**; that is not “training.”
+The system keeps a **searchable Indexed DB** (Postgres/AlloyDB) and uses **Google Gemini** to read contracts once and to write answers—we are **not training a custom AI model**. When new files or rows appear, we **refresh the Indexed DB**; that is not “training.”
 
-**Usage:** Low volume (back office and management, a few times per month). Architecture stays small: **ianbot-api** on **GKE**, catalog in **AlloyDB** (PostgreSQL-compatible). **Scheduling uses Google Apps Script time-driven triggers only**—no dedicated cron VM, Cloud Scheduler, or Kubernetes CronJob required.
+**Usage:** Low volume (back office and management, a few times per month). Architecture stays small: **ianbot-api** on **GKE**, **Indexed DB** in **AlloyDB** (PostgreSQL-compatible). **Scheduling uses Google Apps Script time-driven triggers only**—no dedicated cron VM, Cloud Scheduler, or Kubernetes CronJob required.
 
 FYI / nomenclature:
 
+- **Indexed DB** — company-controlled Postgres/AlloyDB where extracted PDF text and fields (plus synced sheet rows) are stored and indexed for contract Q&A. Not a public AI training dataset.
 - Our existing bot is called **ian-bot** (Drive alerts and related messages). Contract Q&A and payment linking may live on **ian-bot** (extended) or on a **new** Slack app—we have not decided yet (see below).
 - All backend service names will be called ianbot-api.
 - This repo is called ianbot-skill-legal, to "add legal skill". If there are other feature ideas, they will likely be called "ianbot-skill-XXX".
@@ -46,7 +47,7 @@ Until `contract_ref` is set for a row, the assistant should treat that payment a
 2. They check **“Link to contract”** (or set status to “needs link”).
 3. The system suggests **a few likely contracts** in Slack (buttons).
 4. Finance picks one (or “None of these”).
-5. **`contract_ref`** is written on that row; a nightly sync copies it into the catalog database.
+5. **`contract_ref`** is written on that row; a nightly sync copies it into the **Indexed DB**.
 
 **Rules:** Always confirm in Slack—no silent auto-linking (wrong link = wrong payment totals).
 
@@ -57,8 +58,8 @@ Until `contract_ref` is set for a row, the assistant should treat that payment a
 ### What the system does with contract PDFs
 
 - PDFs stay in **Google Drive** (source of truth). We do not replace your filing process.
-- A backend service **downloads** a PDF when it is new or updated, sends text/content to **Google Gemini** to extract structured fields (party names, dates, summary, “watch outs”), and stores **extracted text and fields** in a company-controlled **Postgres** database—not in a public AI training dataset (confirm exact terms with IT for **Vertex AI** vs **AI Studio API key**).
-- The Slack assistant answers using **that catalog only** and must cite sources; it should say “not found” rather than invent clauses.
+- A backend service **downloads** a PDF when it is new or updated, sends text/content to **Google Gemini** to extract structured fields (party names, dates, summary, “watch outs”), and stores **extracted text and fields** in the **Indexed DB** (Postgres)—not in a public AI training dataset (confirm exact terms with IT for **Vertex AI** vs **AI Studio API key**).
+- The Slack assistant answers using the **Indexed DB** only and must cite sources; it should say “not found” rather than invent clauses.
 
 ### What this is not
 
@@ -99,7 +100,7 @@ Until Vertex is approved and enabled in GCP, treat AI Studio extraction as **loc
 
 ### Services map (minimal footprint)
 
-We want **one GKE Deployment (`ianbot-api`)**, **AlloyDB** for the catalog, and **Apps Script for all triggers and schedules** (no dedicated cron VM).
+We want **one GKE Deployment (`ianbot-api`)**, **AlloyDB** for the **Indexed DB**, and **Apps Script for all triggers and schedules** (no dedicated cron VM).
 
 ```text
 ┌──────────────────────────────────────────────────────────────────┐
@@ -146,15 +147,15 @@ We want **one GKE Deployment (`ianbot-api`)**, **AlloyDB** for the catalog, and 
 |-----------|------|-----------|
 | **Apps Script** | New PDF → Slack alert + `POST /ingest`; optional daily `POST /sync/sheet` | Google |
 | **GKE (`ianbot-api`)** | Ingest PDF, sync sheet, Slack interactivity, Q&A logic | GCP |
-| **AlloyDB** | Catalog (contracts, payments)—PostgreSQL-compatible; schema TBD | GCP |
+| **AlloyDB** | **Indexed DB** (contracts, payments)—PostgreSQL-compatible; schema TBD | GCP |
 | **Secret Manager** | API keys, DB URL, ingest secret, Slack secrets | GCP |
 | **Service account** | Robot Google identity for Drive + Sheet API access (via workload identity on GKE) | GCP |
-| **Gemini** | Extract fields from PDF; compose answers from catalog | Google |
+| **Gemini** | Extract fields from PDF; compose answers from Indexed DB | Google |
 | **ian-bot (Slack)** | Alerts today; may add Q&A + linking later | Slack |
 
 ### Ingest service (wireframe)
 
-**Not** the Slack bot. A small **Python (FastAPI)** API that fills Postgres.
+**Not** the Slack bot. A small **Python (FastAPI)** API that indexes extracted data into the **Indexed DB** (Postgres).
 
 | Endpoint | Called by | Purpose |
 |----------|-----------|---------|
@@ -200,7 +201,7 @@ Apps Script Script Properties use the **Ingress base URL** (e.g. `https://ianbot
 
 #### AlloyDB
 
-Managed **PostgreSQL-compatible** database for the catalog. Separate from GKE; connect from pods over **private networking** (VPC / Private Service Connect / AlloyDB Auth Proxy—per platform team).
+Managed **PostgreSQL-compatible** database for the **Indexed DB**. Separate from GKE; connect from pods over **private networking** (VPC / Private Service Connect / AlloyDB Auth Proxy—per platform team).
 
 - Same SQL and drivers as Postgres; **schema design is deferred**.
 - Connection string in Secret Manager → pod env `DATABASE_URL`.
@@ -260,7 +261,7 @@ A **robot Google account** for programs (not humans), e.g. `ianbot@….iam.gserv
 
 ### Suggested DevOps one-liner
 
-> **GKE Deployment** `ianbot-api` behind **Ingress**; **AlloyDB** as the Postgres catalog; **Apps Script** for Drive alerts, **timed schedules**, and HTTP pokes to ingest/sync; **Secret Manager** + **workload identity** for Drive/Sheet; **Slack** webhooks for alerts today and **Ingress** for interactivity later. **No cron VM, Cloud Scheduler, or CronJob.**
+> **GKE Deployment** `ianbot-api` behind **Ingress**; **AlloyDB** as the **Indexed DB** (Postgres); **Apps Script** for Drive alerts, **timed schedules**, and HTTP pokes to ingest/sync; **Secret Manager** + **workload identity** for Drive/Sheet; **Slack** webhooks for alerts today and **Ingress** for interactivity later. **No cron VM, Cloud Scheduler, or CronJob.**
 
 ---
 
@@ -268,7 +269,7 @@ A **robot Google account** for programs (not humans), e.g. `ianbot@….iam.gserv
 
 | | **Today (ian-bot)** | **Planned add-ons** |
 |--|---------------------|---------------------|
-| **Role** | Alerts when new signed PDFs land in Drive (via Apps Script). | (1) **Payment linking**—buttons to fill `contract_ref` on the sheet. (2) **Contract Q&A**—questions about deals and payments using Postgres + Gemini. |
+| **Role** | Alerts when new signed PDFs land in Drive (via Apps Script). | (1) **Payment linking**—buttons to fill `contract_ref` on the sheet. (2) **Contract Q&A**—questions about deals and payments using **Indexed DB** + Gemini. |
 | **Who sees it** | Whatever channels/users already get alerts. | **Back office and management only** (allowlist—not company-wide). |
 | **How to build it** | Keep as-is for alerts. | **Option A:** Extend **ian-bot**. **Option B:** Second Slack app for linking + Q&A only. |
 
@@ -284,8 +285,8 @@ Access control: allowlisted Slack user IDs. Others may still get Drive alerts; t
 | **Finance Google Sheet** | Payment log + new **`contract_ref`** column (via Slack linking). |
 | **Apps Script** | Alerts via **ian-bot**; poke ingest on new PDF; **daily** time-driven trigger for sheet sync. |
 | **GKE (`ianbot-api`)** | Index PDFs, sync sheet, later Slack handlers (via Ingress). |
-| **AlloyDB** | PostgreSQL-compatible catalog for Q&A and payment totals. |
-| **Gemini** | Extract contract fields; write answers from catalog only. |
+| **AlloyDB** | PostgreSQL-compatible **Indexed DB** for Q&A and payment totals. |
+| **Gemini** | Extract contract fields; write answers from Indexed DB only. |
 
 ```text
   Drive (PDFs)
@@ -331,7 +332,7 @@ Access control: allowlisted Slack user IDs. Others may still get Drive alerts; t
 
 - [ ] Confirm with IT/legal: Gemini via **Vertex AI** vs **AI Studio API key**.
 - [ ] GCP project + **GKE** + **AlloyDB** + **Secret Manager** + **service account** (workload identity).
-- [ ] **Postgres** (local Docker for dev; **AlloyDB** for prod)—schema design later.
+- [ ] **Indexed DB** (local Postgres via Docker for dev; **AlloyDB** for prod)—schema design later.
 - [ ] Document Drive **root folder ID**; service account access to full tree.
 - [ ] Document finance **sheet ID** and column mapping.
 - [ ] Finance: new columns **`contract_ref`**, link status, **“Link to contract”** checkbox.
@@ -339,7 +340,7 @@ Access control: allowlisted Slack user IDs. Others may still get Drive alerts; t
 - [ ] Decide extend **ian-bot** vs second Slack app; allowlist back office + management.
 - [ ] Apps Script Script Properties: ingest URL + secret (no secrets in public repo).
 
-### Phase 1 — Database catalog
+### Phase 1 — Indexed DB
 
 - [ ] Design tables: **contracts**, **payments**, **aliases** (TBD).
 - [ ] **Drive file ID** as stable contract key.
@@ -370,7 +371,7 @@ Access control: allowlisted Slack user IDs. Others may still get Drive alerts; t
 ### Phase 4 — Contract Q&A on Slack
 
 - [ ] GKE Slack endpoints (via Ingress); allowlisted DMs.
-- [ ] Answers from Postgres only; Gemini for wording; citations required.
+- [ ] Answers from **Indexed DB** only; Gemini for wording; citations required.
 
 ### Phase 5 — Quality
 
@@ -445,7 +446,7 @@ tests/         # API smoke tests
 
 ## Versioning
 
-**Current version:** `0.0.5` (also in [`VERSION`](VERSION), `pyproject.toml`, `readme.md` title, and `GET /health` → `version`).
+**Current version:** `0.1.0` (also in [`VERSION`](VERSION), `pyproject.toml`, `readme.md` title, and `GET /health` → `version`).
 
 | Bump | When | How |
 |------|------|-----|
@@ -462,6 +463,16 @@ After enabling hooks, each `git commit` bumps patch and stages `VERSION`, `pypro
 ---
 
 ## Changelog
+
+### v0.1.0
+
+- FAQ layer (A1.5): rapidfuzz matching against `bot/content/faqs.yaml`; toggle via `BOT_FAQ_ENABLED`.
+- Dispatch chain: echo (ping/hello/about/version) → FAQ → about fallback; `BotReply` carries `handler` + metadata for future audit observer.
+- Echo `about` / `version` and unknown questions return a verbose build summary (handler status, Indexed DB based Q&A line).
+- Six seed FAQs (capabilities, limitations, how-to-ask, legal clearance, data handling, ping help) with global WIP disclaimer prefix.
+- Counsel observer direction documented (dev: single TG bot; live: Q&A bot + ian-bot audit to Slack) — not implemented.
+- Reader-facing docs use **Indexed DB** for the Postgres/AlloyDB store of extracted PDF fields.
+- `GET /health` adds `bot_faq_enabled`, `bot_faq_configured`, `bot_faq_count`. Vertex chat (A2) and Indexed DB based Q&A (B1) remain on hold.
 
 ### v0.0.8
 
@@ -494,12 +505,12 @@ After enabling hooks, each `git commit` bumps patch and stages `VERSION`, `pypro
 
 ### v0.0.2
 
-- Local dev: `scripts/wipe-local-db.sh` full Postgres reset (Docker volume + `schema.sql`); documented in `docs/DEV.md`.
+- Local dev: `scripts/wipe-local-db.sh` full **Indexed DB** reset (local Postgres via Docker volume + `schema.sql`); documented in `docs/DEV.md`.
 - Phase 0 helpers: `scripts/test_drive_sa.py` and `test_drive_sa2.py` to validate service account folder list and PDF download.
 - `.gitignore` rules for GCP service account JSON key downloads (keep keys out of the public repo).
 
 ### v0.0.1
 
-- Initial **ianbot-api** scaffold: FastAPI (`/health`, `/ingest`, `/sync/sheet`), stub Gemini extraction, local Postgres schema via Docker Compose.
+- Initial **ianbot-api** scaffold: FastAPI (`/health`, `/ingest`, `/sync/sheet`), stub Gemini extraction, local **Indexed DB** (Postgres schema) via Docker Compose.
 - Docs for DevOps (GKE + AlloyDB), finance (`contract_ref`), legal, and Apps Script ingest poke.
 - API smoke tests; versioning scripts and optional git hook for patch bumps.

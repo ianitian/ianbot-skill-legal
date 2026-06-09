@@ -1,14 +1,19 @@
+import json
+import logging
+
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse
 
 from bot.adapters import slack as slack_adapter
 from bot.adapters import telegram as telegram_adapter
-from bot.handlers.echo import handle_echo
+from bot.handlers.dispatch import dispatch_message
 from bot.idempotency import try_record_event
 from bot.outbound.slack_client import send_slack_reply
 from bot.outbound.telegram_client import send_telegram_reply
 from bot.schemas import BotEvent, BotReply
 from core.config import Settings, get_settings
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -28,7 +33,7 @@ def _process_message(settings: Settings, event: BotEvent) -> None:
     if event.forced_reply:
         reply = BotReply(text=event.forced_reply)
     else:
-        reply = handle_echo(event)
+        reply = dispatch_message(settings, event)
         if reply is None:
             return
 
@@ -92,8 +97,23 @@ async def telegram_webhook(webhook_secret: str, request: Request) -> Response:
         return Response(status_code=404)
 
     body = await request.body()
+    try:
+        raw = json.loads(body.decode("utf-8"))
+        message = raw.get("message") or {}
+        chat = message.get("chat") or {}
+        logger.info(
+            "Telegram webhook update_id=%s chat_id=%s type=%s text=%r",
+            raw.get("update_id"),
+            chat.get("id"),
+            chat.get("type"),
+            message.get("text"),
+        )
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        logger.warning("Telegram webhook body is not valid JSON")
+
     event = telegram_adapter.parse_telegram_payload(body, settings)
     if event is None:
+        logger.info("Telegram webhook ignored by gating/parser")
         return Response(status_code=200)
 
     if event.event_type == "message":

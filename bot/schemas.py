@@ -21,7 +21,12 @@ class BotEvent(BaseModel):
     raw: dict[str, Any] = Field(default_factory=dict)
 
 
+BotHandler = Literal["echo", "faq", "fallback"]
+
+
 class BotReply(BaseModel):
     text: str
     citations: list[str] = Field(default_factory=list)
     ephemeral: bool = False
+    handler: Optional[BotHandler] = None
+    handler_metadata: dict[str, Any] = Field(default_factory=dict)
