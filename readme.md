@@ -1,4 +1,4 @@
-# ianbot-skill-legal v0.0.6
+# ianbot-skill-legal v0.0.7
 **Base document** for product, engineering, DevOps, finance, and legal. Describes what we plan to build, how pieces connect, and what each group needs to decide or provide.
 
 Upgrade plans for Slack bot, "ian-bot", that will reference and answer user queries based on:
@@ -430,7 +430,7 @@ Access control: allowlisted Slack user IDs. Others may still get Drive alerts; t
 ## Code folders
 
 ```text
-bot/           # Slack: questions + button clicks (later)
+bot/           # Slack + Telegram webhooks (A1 echo; Q&A/linking later)
 ingest/        # FastAPI app (ianbot-api): /health, /ingest, /sync/sheet
 core/          # config, auth, extract, db
 db/            # schema.sql
@@ -462,6 +462,12 @@ After enabling hooks, each `git commit` bumps patch and stages `VERSION`, `pypro
 ---
 
 ## Changelog
+
+### v0.0.7
+
+- Bot A1: Slack and Telegram webhook adapters (`/webhooks/slack/events`, `/webhooks/slack/interactions` stub, `/webhooks/telegram/{secret}`).
+- Echo handler: `ping` / `/ping` → `pong`; other text → `You said: …`. Idempotency via `bot_processed_events` or in-memory fallback.
+- `GET /health` adds `bot_platforms`, `bot_slack_configured`, `bot_telegram_configured`. See `bot/README.md` and `docs/DEV.md`.
 
 ### v0.0.5
 

@@ -27,6 +27,11 @@ class Settings(BaseSettings):
             return value.strip().lower() in {"yes", "true", "1"}
         return value
     google_cloud_location: Optional[str] = None
+    bot_platforms: str = ""
+    slack_signing_secret: Optional[str] = None
+    slack_bot_token: Optional[str] = None
+    telegram_bot_token: Optional[str] = None
+    telegram_webhook_secret: Optional[str] = None
 
     @property
     def database_configured(self) -> bool:
@@ -72,6 +77,31 @@ class Settings(BaseSettings):
                 and self.google_cloud_location.strip()
             )
         return False
+
+    @property
+    def bot_platforms_enabled(self) -> frozenset[str]:
+        raw = (self.bot_platforms or "").strip()
+        if not raw:
+            return frozenset()
+        return frozenset(p.strip().lower() for p in raw.split(",") if p.strip())
+
+    @property
+    def bot_slack_configured(self) -> bool:
+        return bool(
+            self.slack_signing_secret
+            and self.slack_signing_secret.strip()
+            and self.slack_bot_token
+            and self.slack_bot_token.strip()
+        )
+
+    @property
+    def bot_telegram_configured(self) -> bool:
+        return bool(
+            self.telegram_bot_token
+            and self.telegram_bot_token.strip()
+            and self.telegram_webhook_secret
+            and self.telegram_webhook_secret.strip()
+        )
 
 
 @lru_cache

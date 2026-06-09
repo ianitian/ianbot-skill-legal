@@ -45,3 +45,10 @@ CREATE TABLE IF NOT EXISTS ingest_log (
     detail TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS bot_processed_events (
+    platform TEXT NOT NULL,
+    event_id TEXT NOT NULL,
+    processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (platform, event_id)
+);

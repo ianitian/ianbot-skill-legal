@@ -28,6 +28,9 @@ def health() -> dict:
         "gemini_enabled": settings.gemini_enabled,
         "gemini_configured": settings.gemini_configured,
         "gemini_backend": settings.gemini_backend,
+        "bot_platforms": sorted(settings.bot_platforms_enabled),
+        "bot_slack_configured": settings.bot_slack_configured,
+        "bot_telegram_configured": settings.bot_telegram_configured,
     }
 
 

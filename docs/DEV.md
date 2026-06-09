@@ -133,6 +133,34 @@ docker build -t ianbot-api:local .
 docker run --rm -p 8000:8000 --env-file .env ianbot-api:local
 ```
 
+## Bot webhooks (A1 — Slack + Telegram echo)
+
+Set in `.env` (see `.env.example`):
+
+```bash
+BOT_PLATFORMS=slack,telegram
+SLACK_SIGNING_SECRET=
+SLACK_BOT_TOKEN=
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_WEBHOOK_SECRET=
+```
+
+`GET /health` reports `bot_platforms`, `bot_slack_configured`, and `bot_telegram_configured`. Outbound replies are skipped (with a log warning) until bot tokens are set—you can still verify webhooks.
+
+**Idempotency:** when `DATABASE_URL` is set, events are deduped in `bot_processed_events`. Without a DB, an in-memory set is used (resets on process restart).
+
+### Local smoke test
+
+1. Start API: `uvicorn ingest.api:app --reload --port 8000`
+2. Tunnel: `ngrok http 8000`
+3. **Slack:** App → Event Subscriptions → Request URL `https://<ngrok>/webhooks/slack/events` (needs `SLACK_SIGNING_SECRET`). Subscribe to `message.im` or bot DMs as needed.
+4. **Telegram:** `curl "https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://<ngrok>/webhooks/telegram/<TELEGRAM_WEBHOOK_SECRET>"`
+5. DM the bot: `ping` → `pong`; `hello` → `You said: hello`
+
+Slack interactivity URL (stub, returns 200): `https://<ngrok>/webhooks/slack/interactions`
+
+See [bot/README.md](../bot/README.md) for the full launch ladder (A2+).
+
 ## Apps Script → local API
 
 Use [ngrok](https://ngrok.com/) or similar to expose port 8000, then set Script Properties `INGEST_WEBHOOK_URL` to `https://….ngrok.io/ingest`. Do not commit tunnel URLs or secrets.
