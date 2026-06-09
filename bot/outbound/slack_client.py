@@ -26,13 +26,16 @@ def send_slack_reply(settings: Settings, event: BotEvent, reply: BotReply) -> No
     if event.thread_id:
         payload["thread_ts"] = event.thread_id
 
-    response = httpx.post(
-        _SLACK_API_URL,
-        headers={"Authorization": f"Bearer {token.strip()}"},
-        json=payload,
-        timeout=10.0,
-    )
-    response.raise_for_status()
-    data = response.json()
-    if not data.get("ok"):
-        logger.error("Slack chat.postMessage failed: %s", data.get("error"))
+    try:
+        response = httpx.post(
+            _SLACK_API_URL,
+            headers={"Authorization": f"Bearer {token.strip()}"},
+            json=payload,
+            timeout=10.0,
+        )
+        response.raise_for_status()
+        data = response.json()
+        if not data.get("ok"):
+            logger.error("Slack chat.postMessage failed: %s", data.get("error"))
+    except httpx.HTTPError as exc:
+        logger.error("Slack chat.postMessage request failed: %s", exc)

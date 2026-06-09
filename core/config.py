@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     slack_bot_token: Optional[str] = None
     telegram_bot_token: Optional[str] = None
     telegram_webhook_secret: Optional[str] = None
+    telegram_allowed_chat_ids: str = ""
+    telegram_bot_username: Optional[str] = None
 
     @property
     def database_configured(self) -> bool:
@@ -102,6 +104,18 @@ class Settings(BaseSettings):
             and self.telegram_webhook_secret
             and self.telegram_webhook_secret.strip()
         )
+
+    @property
+    def telegram_allowed_chat_ids_set(self) -> frozenset[str]:
+        raw = (self.telegram_allowed_chat_ids or "").strip()
+        if not raw:
+            return frozenset()
+        return frozenset(part.strip() for part in raw.split(",") if part.strip())
+
+    @property
+    def telegram_group_gating_configured(self) -> bool:
+        username = (self.telegram_bot_username or "").strip().lstrip("@")
+        return bool(self.telegram_allowed_chat_ids_set and username)
 
 
 @lru_cache

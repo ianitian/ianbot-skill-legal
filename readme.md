@@ -1,4 +1,4 @@
-# ianbot-skill-legal v0.0.7
+# ianbot-skill-legal v0.0.8
 **Base document** for product, engineering, DevOps, finance, and legal. Describes what we plan to build, how pieces connect, and what each group needs to decide or provide.
 
 Upgrade plans for Slack bot, "ian-bot", that will reference and answer user queries based on:
@@ -462,6 +462,12 @@ After enabling hooks, each `git commit` bumps patch and stages `VERSION`, `pypro
 ---
 
 ## Changelog
+
+### v0.0.8
+
+- Telegram group gating: `TELEGRAM_ALLOWED_CHAT_IDS` + `TELEGRAM_BOT_USERNAME`; DMs get a redirect message.
+- Group messages accepted via `@mention`, `text_mention` (picker), or `/command@bot`; echo replies `pong` / `Hello, name` / toddler fallback.
+- Outbound Slack/Telegram API errors logged without failing the webhook response.
 
 ### v0.0.7
 

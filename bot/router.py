@@ -7,7 +7,7 @@ from bot.handlers.echo import handle_echo
 from bot.idempotency import try_record_event
 from bot.outbound.slack_client import send_slack_reply
 from bot.outbound.telegram_client import send_telegram_reply
-from bot.schemas import BotEvent
+from bot.schemas import BotEvent, BotReply
 from core.config import Settings, get_settings
 
 router = APIRouter()
@@ -25,9 +25,12 @@ def _process_message(settings: Settings, event: BotEvent) -> None:
     if not try_record_event(event.platform, event.event_id):
         return
 
-    reply = handle_echo(event)
-    if reply is None:
-        return
+    if event.forced_reply:
+        reply = BotReply(text=event.forced_reply)
+    else:
+        reply = handle_echo(event)
+        if reply is None:
+            return
 
     if event.platform == "slack":
         send_slack_reply(settings, event, reply)
@@ -89,7 +92,7 @@ async def telegram_webhook(webhook_secret: str, request: Request) -> Response:
         return Response(status_code=404)
 
     body = await request.body()
-    event = telegram_adapter.parse_telegram_payload(body)
+    event = telegram_adapter.parse_telegram_payload(body, settings)
     if event is None:
         return Response(status_code=200)
 

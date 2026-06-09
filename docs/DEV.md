@@ -143,9 +143,13 @@ SLACK_SIGNING_SECRET=
 SLACK_BOT_TOKEN=
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_WEBHOOK_SECRET=
+TELEGRAM_ALLOWED_CHAT_IDS=-1001234567890
+TELEGRAM_BOT_USERNAME=legallywon_bot
 ```
 
-`GET /health` reports `bot_platforms`, `bot_slack_configured`, and `bot_telegram_configured`. Outbound replies are skipped (with a log warning) until bot tokens are set—you can still verify webhooks.
+`GET /health` reports `bot_platforms`, `bot_slack_configured`, `bot_telegram_configured`, and `telegram_group_gating_configured`.
+
+**Telegram group gating:** DMs are ignored. Only `group` / `supergroup` chats listed in `TELEGRAM_ALLOWED_CHAT_IDS` are handled, and the message must **@mention** the bot (`TELEGRAM_BOT_USERNAME`). To discover a group chat id: `@mention` the bot once, then check server logs for `non-allowlisted chat_id=...` and add that id to `.env`.
 
 **Idempotency:** when `DATABASE_URL` is set, events are deduped in `bot_processed_events`. Without a DB, an in-memory set is used (resets on process restart).
 
@@ -155,7 +159,7 @@ TELEGRAM_WEBHOOK_SECRET=
 2. Tunnel: `ngrok http 8000`
 3. **Slack:** App → Event Subscriptions → Request URL `https://<ngrok>/webhooks/slack/events` (needs `SLACK_SIGNING_SECRET`). Subscribe to `message.im` or bot DMs as needed.
 4. **Telegram:** `curl "https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://<ngrok>/webhooks/telegram/<TELEGRAM_WEBHOOK_SECRET>"`
-5. DM the bot: `ping` → `pong`; `hello` → `You said: hello`
+5. In an allowlisted group: `@legallywon_bot ping` → `pong`; `@legallywon_bot hello` → `Hello, <name>`
 
 Slack interactivity URL (stub, returns 200): `https://<ngrok>/webhooks/slack/interactions`
 

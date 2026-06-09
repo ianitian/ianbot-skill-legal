@@ -11,11 +11,13 @@ class BotEvent(BaseModel):
     event_type: BotEventType
     event_id: str
     user_id: str = ""
+    user_name: str = ""
     chat_id: str = ""
     text: Optional[str] = None
     action_id: Optional[str] = None
     challenge: Optional[str] = None
     thread_id: Optional[str] = None
+    forced_reply: Optional[str] = None
     raw: dict[str, Any] = Field(default_factory=dict)
 
 

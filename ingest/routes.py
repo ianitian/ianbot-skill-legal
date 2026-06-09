@@ -31,6 +31,7 @@ def health() -> dict:
         "bot_platforms": sorted(settings.bot_platforms_enabled),
         "bot_slack_configured": settings.bot_slack_configured,
         "bot_telegram_configured": settings.bot_telegram_configured,
+        "telegram_group_gating_configured": settings.telegram_group_gating_configured,
     }
 
 
