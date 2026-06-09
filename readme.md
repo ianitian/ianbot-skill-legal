@@ -1,12 +1,9 @@
-# ianbot-skill-legal v0.1.1
+# ianbot-skill-legal v0.1.2
 **Base document** for product, engineering, DevOps, finance, and legal. Describes what we plan to build, how pieces connect, and what each group needs to decide or provide.
 
-Upgrade plans for Slack bot, "ian-bot", that will reference and answer user queries based on:
+The system is comprised of two key aspects: a **chatbot for internal use only** that handles legal Q&As for light topics, and, ultimately, **deep fact-based answers** by referring to signed contractual agreements from the company archive (**Google Drive**). The former is for general users within the organization; the latter is for **select allowlisted** users. Similarly, **financial data** (payments and disbursements) may ultimately be integrated to provide more detailed answers regarding signed agreements and contractual obligations.
 
-- **Signed contracts** (PDFs in a Google Drive folder tree), and
-- **Payments** (rows in a finance Google Sheet).
-
-The system keeps a **searchable Indexed DB** (Postgres/AlloyDB) and uses **Google Gemini** to read contracts once and to write answers—we are **not training a custom AI model**. When new files or rows appear, we **refresh the Indexed DB**; that is not “training.”
+Signed contracts (PDFs in Drive) and payment rows (finance Google Sheet) are indexed in a **searchable Indexed DB** (Postgres/AlloyDB). **Vertex AI Gemini** in our GCP project reads each contract once to extract fields and helps word answers—we are **not training a custom AI model**. When new files or rows appear, we **refresh the Indexed DB**; that is not “training.”
 
 **Usage:** Low volume (back office and management, a few times per month). Architecture stays small: **ianbot-api** on **GKE**, **Indexed DB** in **AlloyDB** (PostgreSQL-compatible). **Scheduling uses Google Apps Script time-driven triggers only**—no dedicated cron VM, Cloud Scheduler, or Kubernetes CronJob required.
 
@@ -16,81 +13,19 @@ FYI / nomenclature:
 - Our existing bot is called **ian-bot** (Drive alerts and related messages). Contract Q&A and payment linking may live on **ian-bot** (extended) or on a **new** Slack app—we have not decided yet (see below).
 - All backend service names will be called ianbot-api.
 - This repo is called ianbot-skill-legal, to "add legal skill". If there are other feature ideas, they will likely be called "ianbot-skill-XXX".
+- Even though this repo started as **ianbot-skill-legal**, we may end up deploying **newer bots** in separate roles/features, distinct from the existing **ian-bot** in Slack.
 
 ---
 
 ## For finance
 
-### New column: `contract_ref`
-
-The finance Google Sheet already has payment fields (date, amount, payee, etc.). We will add a **new column** called **`contract_ref`**.
-
-| What | Explanation |
-|------|-------------|
-| **What it holds** | A link to the signed contract in Drive (URL), or the Drive **file ID** for that PDF. |
-| **Who fills it** | Usually **not typed by hand**. After finance marks a row for linking, **ian-bot** (or our backend) posts options in Slack; finance **clicks** the right contract, and the system **writes this column**. |
-| **Why we need it** | Payments and contracts are separate lists. This column is the official “this payment belongs to **that** contract” so totals and Q&A stay correct. |
-| **Related columns** | Link **status** (e.g. needs link / linked / none) and a **“Link to contract”** checkbox to start the Slack flow. |
-
-Until `contract_ref` is set for a row, the assistant should treat that payment as **not linked** (no reliable “how much paid on this deal” for that row).
-
-### What we need from finance
-
-- [x] Agree to the new columns above on the existing payment sheet.
-- [ ] Use the **“Link to contract”** flow in Slack when prompted (pick from suggested contracts; do not skip if the payment belongs to a deal).
-- [ ] Optionally add a **`contract_ref`** on historical rows we care about (can be phased in).
-- [ ] Confirm column names for date, amount, payee, memo so engineering can map the sheet sync.
-
-### Payment linking flow (Slack)
-
-1. Finance enters a payment row as usual.
-2. They check **“Link to contract”** (or set status to “needs link”).
-3. The system suggests **a few likely contracts** in Slack (buttons).
-4. Finance picks one (or “None of these”).
-5. **`contract_ref`** is written on that row; a nightly sync copies it into the **Indexed DB**.
-
-**Rules:** Always confirm in Slack—no silent auto-linking (wrong link = wrong payment totals).
+The Google Sheet the finance team uses to track expenses may be incorporated in a later design phase. That may require additional columns—e.g. a **URL or Drive file ID** linking each payment row to the relevant signed agreement—so payment data can sync into the **Indexed DB** and support richer answers about deals and obligations.
 
 ---
 
 ## For legal and compliance
 
-### What the system does with contract PDFs
-
-- PDFs stay in **Google Drive** (source of truth). We do not replace your filing process.
-- A backend service **downloads** a PDF when it is new or updated, sends text/content to **Google Gemini** to extract structured fields (party names, dates, summary, “watch outs”), and stores **extracted text and fields** in the **Indexed DB** (Postgres)—not in a public AI training dataset (confirm exact terms with IT for **Vertex AI** vs **AI Studio API key**).
-- The Slack assistant answers using the **Indexed DB** only and must cite sources; it should say “not found” rather than invent clauses.
-
-### What this is not
-
-- **Not legal advice.** Decision-support for internal lookup only; disclaimer in the bot.
-- **Not a replacement** for reading originals on important decisions.
-- **Not custom model training** on your contracts.
-
-### Questions for legal / IT to close
-
-- [ ] Is **Vertex AI** (Gemini inside our GCP project) required for confidential PDFs, or is an API key acceptable?
-- [ ] Data retention: how long may we keep extracted fields and query logs?
-- [ ] Who may access the bot (planned: **back office + management** allowlist only)?
-
-### Gemini extraction — Studio (dev) and Vertex (prod)
-
-**v0.0.4+ enables real Gemini extraction** when `GEMINI_ENABLED=true`.
-
-| Backend | Env | Use |
-|---------|-----|-----|
-| `studio` | `GEMINI_API_KEY` | Local dev / validation (AI Studio) |
-| `vertex` | `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION` + ADC | Production ingest inside GCP |
-
-**v0.0.5 implements the Vertex client** (`VertexGeminiClient` via `google-genai` with `vertexai=True`). Flip `GEMINI_BACKEND=vertex` once Vertex AI API, billing, and IAM (`roles/aiplatform.user` on the ingest SA) are ready.
-
-**Risks not fully verified yet:**
-
-- AI Studio API terms and data retention are **not signed off** by legal for confidential signed contracts.
-- API keys in local `.env` are fine for dev only; **production must not** rely on long-lived Studio keys in the repo or pods.
-- Vertex legal/IT approval for confidential PDFs is still an open question (see checklist above).
-
-Until Vertex is approved and enabled in GCP, treat AI Studio extraction as **local/dev validation only**, not production-ready for sensitive PDFs.
+**Future feature (not live today):** For allowlisted **deep contract Q&A**, signed PDFs remain in **Google Drive** (source of truth). **ianbot-api** will ingest each file once through **Vertex AI Gemini** in our GCP project, extract key fields into the **Indexed DB**, and answer only from that indexed data, with citations and “not found” when nothing matches. This is **not legal advice**; it is internal decision-support with a disclaimer. Retention and access rules will be set before go-live.
 
 ---
 
@@ -115,7 +50,7 @@ We want **one GKE Deployment (`ianbot-api`)**, **AlloyDB** for the **Indexed DB*
                     (poke)   │                 │  (Drive / Sheets)
                              v                 v
               ┌──────────────────────────┐   ┌──────────────────────────┐
-              │  GKE: ianbot-api         │   │  Gemini API (Google)     │
+              │  GKE: ianbot-api         │   │  Vertex AI Gemini        │
               │  (Deployment + Ingress)  │   │                          │
               │                          │   │                          │
               │  POST /ingest            │──>│  PDF extraction          │
@@ -150,7 +85,7 @@ We want **one GKE Deployment (`ianbot-api`)**, **AlloyDB** for the **Indexed DB*
 | **AlloyDB** | **Indexed DB** (contracts, payments)—PostgreSQL-compatible; schema TBD | GCP |
 | **Secret Manager** | API keys, DB URL, ingest secret, Slack secrets | GCP |
 | **Service account** | Robot Google identity for Drive + Sheet API access (via workload identity on GKE) | GCP |
-| **Gemini** | Extract fields from PDF; compose answers from Indexed DB | Google |
+| **Vertex AI Gemini** | Extract fields from PDF; compose answers from Indexed DB | GCP |
 | **ian-bot (Slack)** | Alerts today; may add Q&A + linking later | Slack |
 
 ### Ingest service (wireframe)
@@ -208,12 +143,11 @@ Managed **PostgreSQL-compatible** database for the **Indexed DB**. Separate from
 
 #### Secret Manager
 
-A **vault** for sensitive strings (Gemini key, database password, ingest webhook secret, Slack signing secret, bot tokens). Mounted into pods via **External Secrets Operator** or your org’s pattern. **Do not commit secrets to this public GitHub repo.**
+A **vault** for sensitive strings (database password, ingest webhook secret, Slack signing secret, bot tokens). Vertex Gemini uses **workload identity** in prod—no API key in pods. Mounted into pods via **External Secrets Operator** or your org’s pattern. **Do not commit secrets to this public GitHub repo.**
 
 | Secret (example name) | Used for |
 |------------------------|----------|
 | `ingest-webhook-secret` | Apps Script → `/ingest` and `/sync/sheet` auth |
-| `gemini-api-key` | PDF extraction and answers |
 | `database-url` | Postgres connection |
 | `slack-signing-secret` | Verify Slack interactive payloads |
 | `slack-bot-token` | Post messages / update sheet via API (later) |
@@ -238,7 +172,7 @@ A **robot Google account** for programs (not humans), e.g. `ianbot@….iam.gserv
 | **Region** | Where cluster and AlloyDB run (e.g. `us-central1`) |
 | **IAM** | Who can deploy, who can read secrets |
 | **Cloud Scheduler** | Not used for v1 (Apps Script handles schedules). Optional GCP alternative if policy requires it |
-| **Vertex AI** | Enterprise Gemini path in GCP (legal may require this) |
+| **Vertex AI** | Gemini inside our GCP project (`GEMINI_BACKEND=vertex`); required for confidential PDFs |
 
 ### Slack: two connection types
 
@@ -255,7 +189,7 @@ A **robot Google account** for programs (not humans), e.g. `ianbot@….iam.gserv
 - [ ] **Workload identity** — GCP service account for Drive/Sheet; share contract folder + finance sheet (write for `contract_ref`).
 - [ ] **Secret Manager** entries; sync to pods (External Secrets or org pattern).
 - [ ] Provide **Ingress base URL** for Apps Script Script Properties (`/ingest`, `/sync/sheet`).
-- [ ] Confirm **Gemini**: Vertex vs AI Studio.
+- [ ] Enable **Vertex AI** API, billing, and IAM (`roles/aiplatform.user` on ingest SA).
 - [ ] Apps Script **daily** time-driven trigger for `syncSheetToBackend` → `POST /sync/sheet` (no Cloud Scheduler / CronJob for v1).
 - [ ] Public repo: no real tokens in Git; rotate any secrets ever pasted into chat or commits.
 
@@ -286,7 +220,7 @@ Access control: allowlisted Slack user IDs. Others may still get Drive alerts; t
 | **Apps Script** | Alerts via **ian-bot**; poke ingest on new PDF; **daily** time-driven trigger for sheet sync. |
 | **GKE (`ianbot-api`)** | Index PDFs, sync sheet, later Slack handlers (via Ingress). |
 | **AlloyDB** | PostgreSQL-compatible **Indexed DB** for Q&A and payment totals. |
-| **Gemini** | Extract contract fields; write answers from Indexed DB only. |
+| **Vertex AI Gemini** | Extract contract fields; write answers from Indexed DB only. |
 
 ```text
   Drive (PDFs)
@@ -328,72 +262,108 @@ Access control: allowlisted Slack user IDs. Others may still get Drive alerts; t
 
 ## Project to-do
 
-### Phase 0 — Setup and access
+Ship order follows the **bot launch ladder** (A→E in [bot/README.md](bot/README.md)) on top of ingest + **Indexed DB**. ✅ = shipped in repo today.
 
-- [ ] Confirm with IT/legal: Gemini via **Vertex AI** vs **AI Studio API key**.
+### Infrastructure — ingest & Indexed DB
+
+**Phase 0 — Setup and access**
+
 - [ ] GCP project + **GKE** + **AlloyDB** + **Secret Manager** + **service account** (workload identity).
-- [ ] **Indexed DB** (local Postgres via Docker for dev; **AlloyDB** for prod)—schema design later.
-- [ ] Document Drive **root folder ID**; service account access to full tree.
-- [ ] Document finance **sheet ID** and column mapping.
-- [ ] Finance: new columns **`contract_ref`**, link status, **“Link to contract”** checkbox.
+- [x] **Indexed DB** — local Postgres via Docker + `schema.sql` (dev); **AlloyDB** for prod TBD.
+- [x] Drive **root folder ID** + service account access to contract tree (Apps Script, local `.env`, private ops notes—not in this public repo).
+- [ ] Apps Script Script Properties: ingest URL + secret in **prod** (pattern in `docs/apps-script.md`).
+- [ ] Decide extend **ian-bot** vs second Slack app (Q&A + linking).
 - [ ] Decide Slack link message destination (channel vs DM).
-- [ ] Decide extend **ian-bot** vs second Slack app; allowlist back office + management.
-- [ ] Apps Script Script Properties: ingest URL + secret (no secrets in public repo).
 
-### Phase 1 — Indexed DB
+**Phase 1 — Indexed DB schema**
 
-- [ ] Design tables: **contracts**, **payments**, **aliases** (TBD).
-- [ ] **Drive file ID** as stable contract key.
-- [ ] `schema.sql` + local dev setup.
+- [x] Tables: **contracts**, **payments**, **aliases**, `ingest_log`, `bot_processed_events` (`db/schema.sql`).
+- [x] **Drive file ID** as stable contract key; local dev setup (Docker Compose, `scripts/wipe-local-db.sh`, `docs/DEV.md`).
+- [ ] Populate **aliases** for golden questions; verify retrieval on 2–3 real contracts.
+
+**Phase 2 — Ingest on `ianbot-api`**
+
+- [x] `GET /health`, `POST /ingest`, `POST /sync/sheet` (sheet endpoint stub).
+- [x] Drive download (SA / ADC); PDF only; idempotent contract upsert.
+- [x] Vertex Gemini extraction → Indexed DB (local Postgres today).
+- [ ] Real **sheet sync** + `contract_ref` (Sheets API; finance sheet ID + column mapping in private ops).
 - [ ] Verify payment totals vs sheet for 2–3 linked contracts.
+- [ ] Deploy to **GKE** (Deployment + Ingress); prod Apps Script `pokeIngestWebhook` + debounce duplicate file IDs.
+- [x] Keep ian-bot Drive alerts (Apps Script).
+- [ ] **Daily** Apps Script trigger → `POST /sync/sheet`.
+- [ ] Optional: ingest status in Slack alert text.
 
-### Phase 2 — Ingest service on GKE (`ianbot-api`)
+---
 
-- [ ] FastAPI app: `POST /ingest`, `POST /sync/sheet`, `GET /health`.
-- [ ] Drive download (service account); PDF only; idempotent upsert.
-- [ ] Gemini extraction → AlloyDB.
-- [ ] Sheet sync including `contract_ref`.
-- [ ] Deploy to GKE (Deployment + Ingress); wire Apps Script `pokeIngestWebhook`.
+### Bot launch ladder (A → E)
 
-### Phase 2b — Link payments in Slack
+**A1 — Webhooks + echo** ✅
 
-- [ ] Checkbox → Slack message with 3–5 contract buttons + “None”.
-- [ ] Button click → write **`contract_ref`** on sheet (service account or API).
-- [ ] Allowlist finance users for linking actions.
+- [x] Adapters: Slack signature verify, Telegram secret path (`bot/adapters/`).
+- [x] Routes: `/webhooks/slack/events`, `/webhooks/slack/interactions` (stub), `/webhooks/telegram/{secret}`.
+- [x] Echo: `ping`, `hello`, `about`, `version`; idempotency via `bot_processed_events` or in-memory fallback.
+- [x] Outbound: `slack_client`, `telegram_client`; Telegram group gating + dev polling mode.
 
-### Phase 3 — Apps Script
+**A1.5 — FAQ layer** ✅
 
-- [x] Keep ian-bot alerts.
-- [ ] Ingest poke after alert; debounce duplicate file IDs.
-- [ ] **Daily** Apps Script time-driven trigger for `syncSheetToBackend` → `POST /sync/sheet`.
-- [ ] Optional: ingest status in alert message.
+- [x] `bot/content/faqs.yaml`, `core/bot_faq.py` (rapidfuzz), `handlers/faq.py`.
+- [x] Dispatch: echo → FAQ → about fallback; disclaimer prefix; `handler` + metadata on `BotReply`.
 
-### Phase 4 — Contract Q&A on Slack
+**A1.6 — Counsel observer feed**
 
-- [ ] GKE Slack endpoints (via Ingress); allowlisted DMs.
-- [ ] Answers from **Indexed DB** only; Gemini for wording; citations required.
+- [ ] `notify_observers()` after `dispatch_message` (fire-and-forget; `bot/observers/`).
+- [ ] Dev: audit copies to `TELEGRAM_OBSERVER_CHAT_ID` (same Q&A bot).
+- [ ] Live: separate audit path → **ian-bot** → existing Slack channel (`SLACK_AUDIT_*` env).
 
-### Phase 5 — Quality
+**A2 — Vertex conversational chat (no Indexed DB)**
 
-- [ ] Aliases, golden questions, finance UAT on linking.
+- [ ] `handlers/qa.py` + `core/bot_qa.py` chat mode (reuse `gemini_client`; prompt separate from PDF extract).
+- [ ] Wire into dispatch; system prompt: **Indexed DB not connected**—do not invent clauses.
+- [ ] Small internal test audience before wider rollout.
 
-### Phase 6 — Go live
+**A3 — Allowlist + audit**
 
-- [ ] Monitoring, DB backups, disclaimer, audit logging policy.
+- [ ] `core/bot_auth.py` + `bot_allowlist` table; router gate before handlers.
+- [ ] Strangers get polite access-denied; allowlist back office + management (Slack user IDs / Telegram user or chat IDs).
+- [ ] Audit log policy: `user_id` + handler route (complements A1.6 observer).
 
-### Phase 7 — Later
+**B1 — Indexed DB based Q&A**
 
-- [ ] Full text search / OCR / optional web UI.
+- [ ] Retrieval from `contracts` / `aliases` in `core/bot_qa.py`; citations on `BotReply`.
+- [ ] `handlers/qa.py` grounded answers; “not found” when Indexed DB has no match.
+- [ ] Golden questions in `tests/fixtures/`; finance/legal UAT on sample deals.
+- [ ] Prod bot on GKE Ingress (same FastAPI deployment as ingest).
+
+**C — Payment-link buttons**
+
+- [ ] `core/bot_linking.py` — suggest 3–5 contracts for a payment row.
+- [ ] `handlers/link_payment.py` + `bot_action_tokens` (short `callback_data` tokens).
+- [ ] Slack Block Kit + Telegram inline keyboard; interactivity handler writes **`contract_ref`** on sheet.
+- [ ] Finance allowlist for link actions only.
+
+**D — Sheet-triggered outbound**
+
+- [ ] Finance sheet: **`contract_ref`** / link-status columns (see **For finance**); URL or Drive file ID per row.
+- [ ] Apps Script `onLinkCheckbox` (or equivalent) → bot posts link options in Slack/TG.
+- [ ] Document finance **sheet ID** + column mapping (private ops).
+
+**E — Hardening & go-live**
+
+- [ ] Rate limits; redact tokens in logs.
+- [ ] Monitoring, DB backups, disclaimer policy, retention rules.
+- [ ] Prod allowlist on both Slack and Telegram.
+- [ ] Recursive Drive scan or subfolder catch-up (optional).
+- [ ] Later: full-text search, OCR, optional web UI.
 
 ---
 
 ## Suggested build order
 
-1. GKE `/ingest` stub + Apps Script poke (no DB, or fake response).
-2. Postgres schema + real ingest + sheet sync.
-3. Slack payment linking → `contract_ref`.
-4. Q&A on ian-bot (or new app) for allowlisted users.
-5. Aliases, golden tests, hardening.
+1. ~~Ingest + Indexed DB (local)~~ ✅ → prod GKE + Apps Script poke + sheet sync.
+2. ~~**A1** + **A1.5** (echo + FAQ)~~ ✅ → **A1.6** observer → **A2** Vertex chat → **A3** allowlist.
+3. **B1** Indexed DB Q&A (citations) for allowlisted users.
+4. **C** + **D** payment linking (`contract_ref`) + sheet-triggered bot messages.
+5. **E** golden tests, monitoring, go-live.
 
 ---
 
@@ -401,7 +371,7 @@ Access control: allowlisted Slack user IDs. Others may still get Drive alerts; t
 
 | Topic | Choices | Decision |
 |--------|---------|----------|
-| Gemini | AI Studio for **local dev**; **Vertex AI** for prod (`GEMINI_BACKEND=vertex`, v0.0.5) | _dev: Studio; prod: Vertex when GCP + legal ready_ |
+| Gemini | **Vertex AI** in GCP (`GEMINI_BACKEND=vertex`); legacy AI Studio key path in code for local experiments only | _Vertex for prod_ |
 | GKE / AlloyDB | Namespace, Ingress host, AlloyDB instance (platform template?) | _TBD_ |
 | Sheet sync schedule | **Apps Script daily trigger** (no Cloud Scheduler / CronJob for v1) | _decided_ |
 | Slack | Extend **ian-bot** vs new bot | _TBD_ |
@@ -496,7 +466,7 @@ After enabling hooks, each `git commit` bumps patch and stages `VERSION`, `pypro
 
 - Gemini extraction (dev): AI Studio API-key backend (`core/gemini_client.py`) wired into `core/extract.py`.
 - `/ingest` now returns `status: error` when Gemini is enabled but missing Drive bytes or API key; `GET /health` includes `gemini_configured`.
-- **Security note:** checked in with Gemini-enabled path for local testing; data-handling risks for confidential PDFs are **not fully verified**. Production is expected to move to **Vertex AI** after legal/IT sign-off (see “Gemini in v0.0.4” above).
+- **Security note:** early AI Studio API-key path for local testing only; production uses **Vertex AI** after legal/IT sign-off.
 
 ### v0.0.3
 

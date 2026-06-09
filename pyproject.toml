@@ -1,6 +1,6 @@
 [project]
 name = "ianbot-skill-legal"
-version = "0.1.1"
+version = "0.1.2"
 description = "Contract and payment assistant API (ianbot-api)"
 readme = "readme.md"
 requires-python = ">=3.9"
