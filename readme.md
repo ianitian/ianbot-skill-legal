@@ -1,4 +1,4 @@
-# ianbot-skill-legal v0.1.2
+# ianbot-skill-legal v0.1.1
 **Base document** for product, engineering, DevOps, finance, and legal. Describes what we plan to build, how pieces connect, and what each group needs to decide or provide.
 
 The system is comprised of two key aspects: a **chatbot for internal use only** that handles legal Q&As for light topics, and, ultimately, **deep fact-based answers** by referring to signed contractual agreements from the company archive (**Google Drive**). The former is for general users within the organization; the latter is for **select allowlisted** users. Similarly, **financial data** (payments and disbursements) may ultimately be integrated to provide more detailed answers regarding signed agreements and contractual obligations.
