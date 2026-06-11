@@ -1,5 +1,7 @@
-# ianbot-skill-legal v0.1.1
+# exp-wonbot-fuzzy-vertex v0.1.1
 **Base document** for product, engineering, DevOps, finance, and legal. Describes what we plan to build, how pieces connect, and what each group needs to decide or provide.
+
+This repo powers **won-bot**—a new internal **Slack** bot for legal Q&A, payment linking, and related workflows. It is separate from the existing **ian-bot** Slack app (Drive alerts only). A **Telegram** adapter exists in the codebase for **local debugging only**; it is not part of the production UI.
 
 The system is comprised of two key aspects: a **chatbot for internal use only** that handles legal Q&As for light topics, and, ultimately, **deep fact-based answers** by referring to signed contractual agreements from the company archive (**Google Drive**). The former is for general users within the organization; the latter is for **select allowlisted** users. Similarly, **financial data** (payments and disbursements) may ultimately be integrated to provide more detailed answers regarding signed agreements and contractual obligations.
 
@@ -10,10 +12,11 @@ Signed contracts (PDFs in Drive) and payment rows (finance Google Sheet) are ind
 FYI / nomenclature:
 
 - **Indexed DB** — company-controlled Postgres/AlloyDB where extracted PDF text and fields (plus synced sheet rows) are stored and indexed for contract Q&A. Not a public AI training dataset.
-- Our existing bot is called **ian-bot** (Drive alerts and related messages). Contract Q&A and payment linking may live on **ian-bot** (extended) or on a **new** Slack app—we have not decided yet (see below).
-- All backend service names will be called ianbot-api.
-- This repo is called ianbot-skill-legal, to "add legal skill". If there are other feature ideas, they will likely be called "ianbot-skill-XXX".
-- Even though this repo started as **ianbot-skill-legal**, we may end up deploying **newer bots** in separate roles/features, distinct from the existing **ian-bot** in Slack.
+- **won-bot** — new **Slack** bot for legal Q&A, payment linking, and scripted FAQs (this repo). Launched as its own app; we are **not** extending **ian-bot**.
+- **ian-bot** — existing Slack app for Drive alerts and related messages only. Stays as-is; contract Q&A and linking live on **won-bot**.
+- **ianbot-api** — backend FastAPI service (ingest, sync, webhook handlers) deployed on GKE; same deployment serves **won-bot** Slack webhooks.
+- **Telegram (dev only)** — optional adapter for local smoke tests and debugging (`bot/adapters/telegram.py`, polling mode). Not shipped as a production channel for won-bot.
+- This repo is **exp-wonbot-fuzzy-vertex** (formerly conceived as “ianbot-skill-legal” to add a legal skill to ian-bot).
 
 ---
 
@@ -72,9 +75,9 @@ We want **one GKE Deployment (`ianbot-api`)**, **AlloyDB** for the **Indexed DB*
               │  Slack                   │
               │                          │
               │  • Webhook — ian-bot     │
-              │    alerts (today)        │
+              │    Drive alerts (today)  │
               │  • Events API → Ingress  │
-              │    linking + Q&A (later) │
+              │    won-bot Q&A + linking │
               └──────────────────────────┘
 ```
 
@@ -86,7 +89,8 @@ We want **one GKE Deployment (`ianbot-api`)**, **AlloyDB** for the **Indexed DB*
 | **Secret Manager** | API keys, DB URL, ingest secret, Slack secrets | GCP |
 | **Service account** | Robot Google identity for Drive + Sheet API access (via workload identity on GKE) | GCP |
 | **Vertex AI Gemini** | Extract fields from PDF; compose answers from Indexed DB | GCP |
-| **ian-bot (Slack)** | Alerts today; may add Q&A + linking later | Slack |
+| **ian-bot (Slack)** | Drive alerts only (unchanged) | Slack |
+| **won-bot (Slack)** | Q&A, payment linking, FAQ (this repo) | Slack |
 
 ### Ingest service (wireframe)
 
@@ -102,7 +106,7 @@ We want **one GKE Deployment (`ianbot-api`)**, **AlloyDB** for the **Indexed DB*
 
 **Security:** `X-Ingest-Secret` (or similar) on `/ingest` and `/sync/sheet`; not open anonymous internet. Real values in **Secret Manager**, not in this public repo.
 
-**Later (same `ianbot-api` Deployment):** Slack Events API + interactivity for payment linking and Q&A.
+**Later (same `ianbot-api` Deployment):** **won-bot** Slack Events API + interactivity for payment linking and Q&A.
 
 ### Scheduling: Apps Script only (no cron VM)
 
@@ -178,8 +182,8 @@ A **robot Google account** for programs (not humans), e.g. `ianbot@….iam.gserv
 
 | Pattern | Used for | Points to |
 |---------|----------|-----------|
-| **Incoming webhook** | ian-bot “new file” alerts today | Slack URL; Apps Script posts JSON |
-| **Events API + interactivity** | Payment link buttons, Q&A later | **Ingress** HTTPS on GKE (Slack signing secret) |
+| **Incoming webhook** | **ian-bot** “new file” Drive alerts | Slack URL; Apps Script posts JSON |
+| **Events API + interactivity** | **won-bot** payment link buttons, Q&A | **Ingress** HTTPS on GKE (Slack signing secret) |
 
 ### DevOps setup checklist
 
@@ -195,19 +199,21 @@ A **robot Google account** for programs (not humans), e.g. `ianbot@….iam.gserv
 
 ### Suggested DevOps one-liner
 
-> **GKE Deployment** `ianbot-api` behind **Ingress**; **AlloyDB** as the **Indexed DB** (Postgres); **Apps Script** for Drive alerts, **timed schedules**, and HTTP pokes to ingest/sync; **Secret Manager** + **workload identity** for Drive/Sheet; **Slack** webhooks for alerts today and **Ingress** for interactivity later. **No cron VM, Cloud Scheduler, or CronJob.**
+> **GKE Deployment** `ianbot-api` behind **Ingress**; **AlloyDB** as the **Indexed DB** (Postgres); **Apps Script** for Drive alerts, **timed schedules**, and HTTP pokes to ingest/sync; **Secret Manager** + **workload identity** for Drive/Sheet; **ian-bot** webhook for Drive alerts; **won-bot** via **Ingress** for Q&A and linking. **No cron VM, Cloud Scheduler, or CronJob.**
 
 ---
 
-## Slack: ian-bot today vs contract features
+## Slack: ian-bot vs won-bot
 
-| | **Today (ian-bot)** | **Planned add-ons** |
-|--|---------------------|---------------------|
-| **Role** | Alerts when new signed PDFs land in Drive (via Apps Script). | (1) **Payment linking**—buttons to fill `contract_ref` on the sheet. (2) **Contract Q&A**—questions about deals and payments using **Indexed DB** + Gemini. |
-| **Who sees it** | Whatever channels/users already get alerts. | **Back office and management only** (allowlist—not company-wide). |
-| **How to build it** | Keep as-is for alerts. | **Option A:** Extend **ian-bot**. **Option B:** Second Slack app for linking + Q&A only. |
+| | **ian-bot (unchanged)** | **won-bot (this repo)** |
+|--|-------------------------|-------------------------|
+| **Role** | Alerts when new signed PDFs land in Drive (via Apps Script). | (1) **Payment linking**—buttons to fill `contract_ref` on the sheet. (2) **Contract Q&A**—questions about deals and payments using **Indexed DB** + Gemini. (3) Scripted FAQ and echo (shipped in dev). |
+| **Who sees it** | Whatever channels/users already get Drive alerts. | **Back office and management only** (allowlist—not company-wide). |
+| **Platform** | Slack (incoming webhook). | Slack (Events API + interactivity). |
 
-Access control: allowlisted Slack user IDs. Others may still get Drive alerts; they should not get Q&A or linking unless added.
+**Decision:** Contract Q&A and payment linking ship on **won-bot**, a new Slack app—not by extending **ian-bot**. **ian-bot** keeps Drive alerts only.
+
+Access control: allowlisted Slack user IDs for **won-bot**. Others may still get Drive alerts from **ian-bot**; they should not get Q&A or linking unless added to the allowlist.
 
 ---
 
@@ -217,8 +223,8 @@ Access control: allowlisted Slack user IDs. Others may still get Drive alerts; t
 |--------|----------------|
 | **Google Drive** | Official home for signed PDFs (inbox + subfolders). **File ID** stays the same when moved between folders. |
 | **Finance Google Sheet** | Payment log + new **`contract_ref`** column (via Slack linking). |
-| **Apps Script** | Alerts via **ian-bot**; poke ingest on new PDF; **daily** time-driven trigger for sheet sync. |
-| **GKE (`ianbot-api`)** | Index PDFs, sync sheet, later Slack handlers (via Ingress). |
+| **Apps Script** | Drive alerts via **ian-bot**; poke ingest on new PDF; **daily** time-driven trigger for sheet sync. |
+| **GKE (`ianbot-api`)** | Index PDFs, sync sheet; **won-bot** webhook handlers (via Ingress). |
 | **AlloyDB** | PostgreSQL-compatible **Indexed DB** for Q&A and payment totals. |
 | **Vertex AI Gemini** | Extract contract fields; write answers from Indexed DB only. |
 
@@ -232,11 +238,11 @@ Access control: allowlisted Slack user IDs. Others may still get Drive alerts; t
 
   Finance Sheet (+ contract_ref)
        |
-       |  "Link to contract" -> Slack buttons -> contract_ref filled
+       |  "Link to contract" -> won-bot buttons -> contract_ref filled
        v
   Apps Script (daily trigger) ---> POST /sync/sheet ---> AlloyDB
 
-  ian-bot (later) ---> Ingress (GKE) ---> AlloyDB + Gemini (Q&A, allowlisted)
+  won-bot (Slack) ---> Ingress (GKE) ---> AlloyDB + Gemini (Q&A, allowlisted)
 ```
 
 ---
@@ -272,8 +278,8 @@ Ship order follows the **bot launch ladder** (A→E in [bot/README.md](bot/READM
 - [x] **Indexed DB** — local Postgres via Docker + `schema.sql` (dev); **AlloyDB** for prod TBD.
 - [x] Drive **root folder ID** + service account access to contract tree (Apps Script, local `.env`, private ops notes—not in this public repo).
 - [ ] Apps Script Script Properties: ingest URL + secret in **prod** (pattern in `docs/apps-script.md`).
-- [ ] Decide extend **ian-bot** vs second Slack app (Q&A + linking).
-- [ ] Decide Slack link message destination (channel vs DM).
+- [x] **won-bot** as new Slack app (not extending **ian-bot**) for Q&A + linking.
+- [ ] Decide **won-bot** link message destination (channel vs DM).
 
 **Phase 1 — Indexed DB schema**
 
@@ -299,10 +305,10 @@ Ship order follows the **bot launch ladder** (A→E in [bot/README.md](bot/READM
 
 **A1 — Webhooks + echo** ✅
 
-- [x] Adapters: Slack signature verify, Telegram secret path (`bot/adapters/`).
-- [x] Routes: `/webhooks/slack/events`, `/webhooks/slack/interactions` (stub), `/webhooks/telegram/{secret}`.
+- [x] Adapters: Slack signature verify (`bot/adapters/slack.py`); Telegram adapter for **local debug only** (`bot/adapters/telegram.py`).
+- [x] Routes: `/webhooks/slack/events`, `/webhooks/slack/interactions` (stub); `/webhooks/telegram/{secret}` (dev/debug).
 - [x] Echo: `ping`, `hello`, `about`, `version`; idempotency via `bot_processed_events` or in-memory fallback.
-- [x] Outbound: `slack_client`, `telegram_client`; Telegram group gating + dev polling mode.
+- [x] Outbound: `slack_client` (prod); `telegram_client` + polling mode for local debugging only.
 
 **A1.5 — FAQ layer** ✅
 
@@ -312,8 +318,8 @@ Ship order follows the **bot launch ladder** (A→E in [bot/README.md](bot/READM
 **A1.6 — Counsel observer feed**
 
 - [ ] `notify_observers()` after `dispatch_message` (fire-and-forget; `bot/observers/`).
-- [ ] Dev: audit copies to `TELEGRAM_OBSERVER_CHAT_ID` (same Q&A bot).
-- [ ] Live: separate audit path → **ian-bot** → existing Slack channel (`SLACK_AUDIT_*` env).
+- [ ] Dev: optional audit copies to `TELEGRAM_OBSERVER_CHAT_ID` (Telegram debug channel only).
+- [ ] Live: separate audit path → Slack channel via **won-bot** or dedicated audit webhook (`SLACK_AUDIT_*` env).
 
 **A2 — Vertex conversational chat (no Indexed DB)**
 
@@ -324,7 +330,7 @@ Ship order follows the **bot launch ladder** (A→E in [bot/README.md](bot/READM
 **A3 — Allowlist + audit**
 
 - [ ] `core/bot_auth.py` + `bot_allowlist` table; router gate before handlers.
-- [ ] Strangers get polite access-denied; allowlist back office + management (Slack user IDs / Telegram user or chat IDs).
+- [ ] Strangers get polite access-denied; allowlist back office + management (Slack user IDs).
 - [ ] Audit log policy: `user_id` + handler route (complements A1.6 observer).
 
 **B1 — Indexed DB based Q&A**
@@ -338,20 +344,20 @@ Ship order follows the **bot launch ladder** (A→E in [bot/README.md](bot/READM
 
 - [ ] `core/bot_linking.py` — suggest 3–5 contracts for a payment row.
 - [ ] `handlers/link_payment.py` + `bot_action_tokens` (short `callback_data` tokens).
-- [ ] Slack Block Kit + Telegram inline keyboard; interactivity handler writes **`contract_ref`** on sheet.
+- [ ] Slack Block Kit buttons; interactivity handler writes **`contract_ref`** on sheet.
 - [ ] Finance allowlist for link actions only.
 
 **D — Sheet-triggered outbound**
 
 - [ ] Finance sheet: **`contract_ref`** / link-status columns (see **For finance**); URL or Drive file ID per row.
-- [ ] Apps Script `onLinkCheckbox` (or equivalent) → bot posts link options in Slack/TG.
+- [ ] Apps Script `onLinkCheckbox` (or equivalent) → **won-bot** posts link options in Slack.
 - [ ] Document finance **sheet ID** + column mapping (private ops).
 
 **E — Hardening & go-live**
 
 - [ ] Rate limits; redact tokens in logs.
 - [ ] Monitoring, DB backups, disclaimer policy, retention rules.
-- [ ] Prod allowlist on both Slack and Telegram.
+- [ ] Prod allowlist on Slack.
 - [ ] Recursive Drive scan or subfolder catch-up (optional).
 - [ ] Later: full-text search, OCR, optional web UI.
 
@@ -374,7 +380,7 @@ Ship order follows the **bot launch ladder** (A→E in [bot/README.md](bot/READM
 | Gemini | **Vertex AI** in GCP (`GEMINI_BACKEND=vertex`); legacy AI Studio key path in code for local experiments only | _Vertex for prod_ |
 | GKE / AlloyDB | Namespace, Ingress host, AlloyDB instance (platform template?) | _TBD_ |
 | Sheet sync schedule | **Apps Script daily trigger** (no Cloud Scheduler / CronJob for v1) | _decided_ |
-| Slack | Extend **ian-bot** vs new bot | _TBD_ |
+| Slack bot | Extend **ian-bot** vs new **won-bot** app | _**won-bot** (new app)_ |
 | Q&A / linking users | Allowlist: back office + management | _TBD_ |
 | Link messages | Finance channel vs DM | _TBD_ |
 
@@ -389,8 +395,8 @@ Ship order follows the **bot launch ladder** (A→E in [bot/README.md](bot/READM
 | Drive root folder | |
 | Finance sheet | |
 | Slack workspace | |
-| ian-bot (Slack app) | |
-| Second Slack app (if not extending ian-bot) | |
+| ian-bot (Slack app — Drive alerts) | |
+| won-bot (Slack app — Q&A + linking) | |
 | GCP project | |
 | Ingress URL (ianbot-api) | |
 | AlloyDB instance | |
@@ -401,7 +407,7 @@ Ship order follows the **bot launch ladder** (A→E in [bot/README.md](bot/READM
 ## Code folders
 
 ```text
-bot/           # Slack + Telegram webhooks (A1 echo; Q&A/linking later)
+bot/           # won-bot Slack webhooks; Telegram adapter for local debug only
 ingest/        # FastAPI app (ianbot-api): /health, /ingest, /sync/sheet
 core/          # config, auth, extract, db
 db/            # schema.sql
@@ -428,7 +434,7 @@ tests/         # API smoke tests
 
 **Skip auto patch bump** (rare): `git commit --no-verify`.
 
-After enabling hooks, each `git commit` bumps patch and stages `VERSION`, `pyproject.toml`, `ingest/api.py`, and the `readme.md` title (`# ianbot-skill-legal vX.X.X`) before the commit is created—add changelog notes in the same commit when you can.
+After enabling hooks, each `git commit` bumps patch and stages `VERSION`, `pyproject.toml`, `ingest/api.py`, and the `readme.md` title (`# exp-wonbot-fuzzy-vertex vX.X.X`) before the commit is created—add changelog notes in the same commit when you can.
 
 ---
 
@@ -440,19 +446,19 @@ After enabling hooks, each `git commit` bumps patch and stages `VERSION`, `pypro
 - Dispatch chain: echo (ping/hello/about/version) → FAQ → about fallback; `BotReply` carries `handler` + metadata for future audit observer.
 - Echo `about` / `version` and unknown questions return a verbose build summary (handler status, Indexed DB based Q&A line).
 - Six seed FAQs (capabilities, limitations, how-to-ask, legal clearance, data handling, ping help) with global WIP disclaimer prefix.
-- Counsel observer direction documented (dev: single TG bot; live: Q&A bot + ian-bot audit to Slack) — not implemented.
+- Counsel observer direction documented (dev: optional Telegram debug feed; live: **won-bot** Q&A + audit to Slack) — not implemented.
 - Reader-facing docs use **Indexed DB** for the Postgres/AlloyDB store of extracted PDF fields.
 - `GET /health` adds `bot_faq_enabled`, `bot_faq_configured`, `bot_faq_count`. Vertex chat (A2) and Indexed DB based Q&A (B1) remain on hold.
 
 ### v0.0.8
 
-- Telegram group gating: `TELEGRAM_ALLOWED_CHAT_IDS` + `TELEGRAM_BOT_USERNAME`; DMs get a redirect message.
+- Telegram adapter (local debug): group gating via `TELEGRAM_ALLOWED_CHAT_IDS` + `TELEGRAM_BOT_USERNAME`; not a production won-bot channel.
 - Group messages accepted via `@mention`, `text_mention` (picker), or `/command@bot`; echo replies `pong` / `Hello, name` / toddler fallback.
-- Outbound Slack/Telegram API errors logged without failing the webhook response.
+- Outbound API errors logged without failing the webhook response.
 
 ### v0.0.7
 
-- Bot A1: Slack and Telegram webhook adapters (`/webhooks/slack/events`, `/webhooks/slack/interactions` stub, `/webhooks/telegram/{secret}`).
+- Bot A1: Slack webhook adapters (`/webhooks/slack/events`, `/webhooks/slack/interactions` stub); Telegram route added for local debugging.
 - Echo handler: `ping` / `/ping` → `pong`; other text → `You said: …`. Idempotency via `bot_processed_events` or in-memory fallback.
 - `GET /health` adds `bot_platforms`, `bot_slack_configured`, `bot_telegram_configured`. See `bot/README.md` and `docs/DEV.md`.
 
