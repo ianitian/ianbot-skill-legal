@@ -21,7 +21,7 @@ class BotEvent(BaseModel):
     raw: dict[str, Any] = Field(default_factory=dict)
 
 
-BotHandler = Literal["echo", "faq", "fallback"]
+BotHandler = Literal["echo", "faq", "fallback", "receptionist"]
 
 
 class BotReply(BaseModel):

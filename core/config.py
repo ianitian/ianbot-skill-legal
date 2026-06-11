@@ -37,7 +37,39 @@ class Settings(BaseSettings):
     bot_faq_enabled: bool = False
     bot_faq_path: str = "bot/content/faqs.yaml"
     bot_faq_min_score: int = 80
+    bot_receptionist_enabled: bool = False
+    bot_receptionist_fast_faq_score: int = 95
+    bot_receptionist_gray_low: int = 40
+    bot_receptionist_candidate_limit: int = 3
     bot_telegram_use_polling: bool = False
+
+    @field_validator("bot_receptionist_enabled", mode="before")
+    @classmethod
+    def _parse_bot_receptionist_enabled(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip().lower() in {"yes", "true", "1"}
+        return value
+
+    @field_validator("bot_receptionist_fast_faq_score", mode="before")
+    @classmethod
+    def _parse_bot_receptionist_fast_faq_score(cls, value: object) -> object:
+        if isinstance(value, str) and value.strip():
+            return int(value.strip())
+        return value
+
+    @field_validator("bot_receptionist_gray_low", mode="before")
+    @classmethod
+    def _parse_bot_receptionist_gray_low(cls, value: object) -> object:
+        if isinstance(value, str) and value.strip():
+            return int(value.strip())
+        return value
+
+    @field_validator("bot_receptionist_candidate_limit", mode="before")
+    @classmethod
+    def _parse_bot_receptionist_candidate_limit(cls, value: object) -> object:
+        if isinstance(value, str) and value.strip():
+            return int(value.strip())
+        return value
 
     @field_validator("bot_telegram_use_polling", mode="before")
     @classmethod
@@ -153,6 +185,10 @@ class Settings(BaseSettings):
     @property
     def bot_faq_configured(self) -> bool:
         return self.bot_faq_enabled and self.bot_faq_count > 0
+
+    @property
+    def bot_receptionist_configured(self) -> bool:
+        return self.bot_receptionist_enabled and self.gemini_configured
 
 
 @lru_cache

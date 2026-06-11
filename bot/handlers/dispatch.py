@@ -2,6 +2,7 @@ from typing import Optional
 
 from bot.handlers.echo import format_about_reply, handle_echo
 from bot.handlers.faq import handle_faq
+from bot.handlers.receptionist import handle_receptionist
 from bot.schemas import BotEvent, BotReply
 from core.config import Settings
 
@@ -22,6 +23,9 @@ def dispatch_message(settings: Settings, event: BotEvent) -> Optional[BotReply]:
     echo_reply = handle_echo(event)
     if echo_reply is not None:
         return echo_reply
+
+    if settings.bot_receptionist_enabled:
+        return handle_receptionist(settings, event)
 
     faq_reply = handle_faq(settings, event)
     if faq_reply is not None:

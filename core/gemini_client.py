@@ -100,6 +100,12 @@ def get_gemini_client(settings: Optional[Settings] = None) -> Optional[GeminiExt
     raise GeminiExtractionError(f"Unknown GEMINI_BACKEND: {settings.gemini_backend}")
 
 
+def generate_json(prompt: str, user_message: str, settings: Optional[Settings] = None) -> dict:
+    """Text-only Gemini chat returning JSON (receptionist Phase 2; not wired in scaffold)."""
+    _ = (prompt, user_message, settings or get_settings())
+    raise NotImplementedError("generate_json is not implemented until receptionist Phase 2")
+
+
 def gemini_not_configured_message(settings: Settings) -> str:
     backend = (settings.gemini_backend or "studio").strip().lower()
     if backend == "vertex":

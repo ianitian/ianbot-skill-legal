@@ -4,6 +4,8 @@ Incoming messages from **Slack** and **Telegram** hit the same `wonbot-api` depl
 
 See also the product roadmap in [readme.md](../readme.md) (Phases 2b–4).
 
+**Receptionist experiment** (`feature-receptionist` branch only): [docs/RECEPTIONIST_BRANCH.md](../docs/RECEPTIONIST_BRANCH.md) — Vertex gate on FAQ candidates; scaffold behind `BOT_RECEPTIONIST_ENABLED`.
+
 ## Design principle
 
 **Platform adapters in, domain logic out.**

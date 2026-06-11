@@ -35,6 +35,8 @@ def health() -> dict:
         "bot_faq_enabled": settings.bot_faq_enabled,
         "bot_faq_configured": settings.bot_faq_configured,
         "bot_faq_count": settings.bot_faq_count,
+        "bot_receptionist_enabled": settings.bot_receptionist_enabled,
+        "bot_receptionist_configured": settings.bot_receptionist_configured,
         "bot_telegram_use_polling": settings.bot_telegram_use_polling,
         "bot_telegram_polling_active": _telegram_polling_active(settings),
     }
