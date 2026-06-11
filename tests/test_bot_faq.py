@@ -102,7 +102,7 @@ def test_dispatch_fallback_when_faq_disabled():
     reply = dispatch_message(settings, _event("what can you do"))
     assert reply is not None
     assert reply.handler == "fallback"
-    assert "ianbot-api v" in reply.text
+    assert "wonbot-api v" in reply.text
     assert "Indexed DB based Q&A: not enabled" in reply.text
 
 

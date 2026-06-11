@@ -1,7 +1,7 @@
 [project]
-name = "ianbot-skill-legal"
+name = "exp-wonbot-fuzzy-vertex"
 version = "0.1.2"
-description = "Contract and payment assistant API (ianbot-api)"
+description = "Contract and payment assistant API (wonbot-api)"
 readme = "readme.md"
 requires-python = ">=3.9"
 dependencies = [

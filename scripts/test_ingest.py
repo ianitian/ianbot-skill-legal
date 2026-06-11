@@ -77,7 +77,7 @@ def _http_json(method: str, url: str, headers: dict[str, str], body: Optional[di
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Test local ianbot-api /ingest for one Drive file.")
+    parser = argparse.ArgumentParser(description="Test local wonbot-api /ingest for one Drive file.")
     parser.add_argument(
         "drive_url",
         help="Google Drive file URL or bare drive_file_id",

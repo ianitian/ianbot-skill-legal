@@ -129,8 +129,8 @@ pytest
 ## Docker image (matches GKE-bound Dockerfile)
 
 ```bash
-docker build -t ianbot-api:local .
-docker run --rm -p 8000:8000 --env-file .env ianbot-api:local
+docker build -t wonbot-api:local .
+docker run --rm -p 8000:8000 --env-file .env wonbot-api:local
 ```
 
 ## Bot webhooks (A1 — Slack + Telegram echo)

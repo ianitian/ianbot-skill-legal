@@ -7,16 +7,15 @@ The system is comprised of two key aspects: a **chatbot for internal use only** 
 
 Signed contracts (PDFs in Drive) and payment rows (finance Google Sheet) are indexed in a **searchable Indexed DB** (Postgres/AlloyDB). **Vertex AI Gemini** in our GCP project reads each contract once to extract fields and helps word answers—we are **not training a custom AI model**. When new files or rows appear, we **refresh the Indexed DB**; that is not “training.”
 
-**Usage:** Low volume (back office and management, a few times per month). Architecture stays small: **ianbot-api** on **GKE**, **Indexed DB** in **AlloyDB** (PostgreSQL-compatible). **Scheduling uses Google Apps Script time-driven triggers only**—no dedicated cron VM, Cloud Scheduler, or Kubernetes CronJob required.
+**Usage:** Low volume (back office and management, a few times per month). Architecture stays small: **wonbot-api** on **GKE**, **Indexed DB** in **AlloyDB** (PostgreSQL-compatible). **Scheduling uses Google Apps Script time-driven triggers only**—no dedicated cron VM, Cloud Scheduler, or Kubernetes CronJob required.
 
 FYI / nomenclature:
 
 - **Indexed DB** — company-controlled Postgres/AlloyDB where extracted PDF text and fields (plus synced sheet rows) are stored and indexed for contract Q&A. Not a public AI training dataset.
 - **won-bot** — new **Slack** bot for legal Q&A, payment linking, and scripted FAQs (this repo). Launched as its own app; we are **not** extending **ian-bot**.
 - **ian-bot** — existing Slack app for Drive alerts and related messages only. Stays as-is; contract Q&A and linking live on **won-bot**.
-- **ianbot-api** — backend FastAPI service (ingest, sync, webhook handlers) deployed on GKE; same deployment serves **won-bot** Slack webhooks.
+- **wonbot-api** — backend FastAPI service (ingest, sync, webhook handlers) deployed on GKE; same deployment serves **won-bot** Slack webhooks.
 - **Telegram (dev only)** — optional adapter for local smoke tests and debugging (`bot/adapters/telegram.py`, polling mode). Not shipped as a production channel for won-bot.
-- This repo is **exp-wonbot-fuzzy-vertex** (formerly conceived as “ianbot-skill-legal” to add a legal skill to ian-bot).
 
 ---
 
@@ -28,7 +27,7 @@ The Google Sheet the finance team uses to track expenses may be incorporated in 
 
 ## For legal and compliance
 
-**Future feature (not live today):** For allowlisted **deep contract Q&A**, signed PDFs remain in **Google Drive** (source of truth). **ianbot-api** will ingest each file once through **Vertex AI Gemini** in our GCP project, extract key fields into the **Indexed DB**, and answer only from that indexed data, with citations and “not found” when nothing matches. This is **not legal advice**; it is internal decision-support with a disclaimer. Retention and access rules will be set before go-live.
+**Future feature (not live today):** For allowlisted **deep contract Q&A**, signed PDFs remain in **Google Drive** (source of truth). **wonbot-api** will ingest each file once through **Vertex AI Gemini** in our GCP project, extract key fields into the **Indexed DB**, and answer only from that indexed data, with citations and “not found” when nothing matches. This is **not legal advice**; it is internal decision-support with a disclaimer. Retention and access rules will be set before go-live.
 
 ---
 
@@ -38,7 +37,7 @@ The Google Sheet the finance team uses to track expenses may be incorporated in 
 
 ### Services map (minimal footprint)
 
-We want **one GKE Deployment (`ianbot-api`)**, **AlloyDB** for the **Indexed DB**, and **Apps Script for all triggers and schedules** (no dedicated cron VM).
+We want **one GKE Deployment (`wonbot-api`)**, **AlloyDB** for the **Indexed DB**, and **Apps Script for all triggers and schedules** (no dedicated cron VM).
 
 ```text
 ┌──────────────────────────────────────────────────────────────────┐
@@ -53,7 +52,7 @@ We want **one GKE Deployment (`ianbot-api`)**, **AlloyDB** for the **Indexed DB*
                     (poke)   │                 │  (Drive / Sheets)
                              v                 v
               ┌──────────────────────────┐   ┌──────────────────────────┐
-              │  GKE: ianbot-api         │   │  Vertex AI Gemini        │
+              │  GKE: wonbot-api         │   │  Vertex AI Gemini        │
               │  (Deployment + Ingress)  │   │                          │
               │                          │   │                          │
               │  POST /ingest            │──>│  PDF extraction          │
@@ -84,7 +83,7 @@ We want **one GKE Deployment (`ianbot-api`)**, **AlloyDB** for the **Indexed DB*
 | Component | Role | Hosted by |
 |-----------|------|-----------|
 | **Apps Script** | New PDF → Slack alert + `POST /ingest`; optional daily `POST /sync/sheet` | Google |
-| **GKE (`ianbot-api`)** | Ingest PDF, sync sheet, Slack interactivity, Q&A logic | GCP |
+| **GKE (`wonbot-api`)** | Ingest PDF, sync sheet, Slack interactivity, Q&A logic | GCP |
 | **AlloyDB** | **Indexed DB** (contracts, payments)—PostgreSQL-compatible; schema TBD | GCP |
 | **Secret Manager** | API keys, DB URL, ingest secret, Slack secrets | GCP |
 | **Service account** | Robot Google identity for Drive + Sheet API access (via workload identity on GKE) | GCP |
@@ -106,7 +105,7 @@ We want **one GKE Deployment (`ianbot-api`)**, **AlloyDB** for the **Indexed DB*
 
 **Security:** `X-Ingest-Secret` (or similar) on `/ingest` and `/sync/sheet`; not open anonymous internet. Real values in **Secret Manager**, not in this public repo.
 
-**Later (same `ianbot-api` Deployment):** **won-bot** Slack Events API + interactivity for payment linking and Q&A.
+**Later (same `wonbot-api` Deployment):** **won-bot** Slack Events API + interactivity for payment linking and Q&A.
 
 ### Scheduling: Apps Script only (no cron VM)
 
@@ -118,7 +117,7 @@ We do **not** need a dedicated cron VM, **Cloud Scheduler**, or a **Kubernetes C
 | Daily sheet → AlloyDB | **Daily** time-driven trigger → `syncSheetToBackend()` → `POST /sync/sheet` |
 | Optional Drive catch-up | **Weekly** time-driven trigger → `reconcileDrive()` → rescan endpoint (if we add one) |
 
-**Apps Script** = doorbell **and alarm clock** (alerts + schedules). **GKE (`ianbot-api`)** = kitchen (Gemini, AlloyDB, Slack handlers).
+**Apps Script** = doorbell **and alarm clock** (alerts + schedules). **GKE (`wonbot-api`)** = kitchen (Gemini, AlloyDB, Slack handlers).
 
 **Why this is enough:** Each scheduled run only needs to `UrlFetchApp.fetch` one HTTPS endpoint—well within Apps Script limits. No separate cron infrastructure to deploy or pay for.
 
@@ -130,13 +129,13 @@ We do **not** need a dedicated cron VM, **Cloud Scheduler**, or a **Kubernetes C
 
 Runs our application as containers in a cluster. Expose **HTTPS** via **Ingress** (org standard hostname + TLS).
 
-- **Deployment** `ianbot-api` — FastAPI app from the same Docker image as local dev.
+- **Deployment** `wonbot-api` — FastAPI app from the same Docker image as local dev.
 - **Service** (ClusterIP) — routes traffic to pods.
 - **Ingress** — public URL for Apps Script (`POST /ingest`) and later Slack Events API.
 - Low traffic: often **1 replica** is enough; use platform templates (Helm/Kustomize) if available.
 - **Probes** — Kubernetes `liveness` / `readiness` on `GET /health`.
 
-Apps Script Script Properties use the **Ingress base URL** (e.g. `https://ianbot-api.<your-domain>/ingest`), not `*.run.app`.
+Apps Script Script Properties use the **Ingress base URL** (e.g. `https://wonbot-api.<your-domain>/ingest`), not `*.run.app`.
 
 #### AlloyDB
 
@@ -160,7 +159,7 @@ Apps Script uses **Script Properties** for the ingest URL and the same shared se
 
 #### Service account
 
-A **robot Google account** for programs (not humans), e.g. `ianbot@….iam.gserviceaccount.com`.
+A **robot Google account** for programs (not humans), e.g. `wonbot@….iam.gserviceaccount.com`.
 
 - Bind to GKE pods via **workload identity** (Kubernetes service account → GCP service account)—preferred over JSON key files in the cluster.
 - **Share** the contract Drive folder and finance sheet with this email (like sharing with a colleague).
@@ -171,7 +170,7 @@ A **robot Google account** for programs (not humans), e.g. `ianbot@….iam.gserv
 | Term | Meaning |
 |------|---------|
 | **GCP project** | Billing + container for GKE, AlloyDB, secrets |
-| **GKE namespace** | Where `ianbot-api` Deployment lives (e.g. `ianbot-legal`) |
+| **GKE namespace** | Where `wonbot-api` Deployment lives (e.g. `wonbot`) |
 | **Ingress / Gateway** | Public HTTPS entry to the API |
 | **Region** | Where cluster and AlloyDB run (e.g. `us-central1`) |
 | **IAM** | Who can deploy, who can read secrets |
@@ -187,7 +186,7 @@ A **robot Google account** for programs (not humans), e.g. `ianbot@….iam.gserv
 
 ### DevOps setup checklist
 
-- [ ] GCP **project** + **GKE** cluster (or shared cluster) + namespace for `ianbot-api`.
+- [ ] GCP **project** + **GKE** cluster (or shared cluster) + namespace for `wonbot-api`.
 - [ ] **AlloyDB** instance (when schema is ready); private connectivity from GKE per platform standard.
 - [ ] **Deployment**, **Service**, **Ingress** (+ TLS); `GET /health` probes configured.
 - [ ] **Workload identity** — GCP service account for Drive/Sheet; share contract folder + finance sheet (write for `contract_ref`).
@@ -199,7 +198,7 @@ A **robot Google account** for programs (not humans), e.g. `ianbot@….iam.gserv
 
 ### Suggested DevOps one-liner
 
-> **GKE Deployment** `ianbot-api` behind **Ingress**; **AlloyDB** as the **Indexed DB** (Postgres); **Apps Script** for Drive alerts, **timed schedules**, and HTTP pokes to ingest/sync; **Secret Manager** + **workload identity** for Drive/Sheet; **ian-bot** webhook for Drive alerts; **won-bot** via **Ingress** for Q&A and linking. **No cron VM, Cloud Scheduler, or CronJob.**
+> **GKE Deployment** `wonbot-api` behind **Ingress**; **AlloyDB** as the **Indexed DB** (Postgres); **Apps Script** for Drive alerts, **timed schedules**, and HTTP pokes to ingest/sync; **Secret Manager** + **workload identity** for Drive/Sheet; **ian-bot** webhook for Drive alerts; **won-bot** via **Ingress** for Q&A and linking. **No cron VM, Cloud Scheduler, or CronJob.**
 
 ---
 
@@ -224,7 +223,7 @@ Access control: allowlisted Slack user IDs for **won-bot**. Others may still get
 | **Google Drive** | Official home for signed PDFs (inbox + subfolders). **File ID** stays the same when moved between folders. |
 | **Finance Google Sheet** | Payment log + new **`contract_ref`** column (via Slack linking). |
 | **Apps Script** | Drive alerts via **ian-bot**; poke ingest on new PDF; **daily** time-driven trigger for sheet sync. |
-| **GKE (`ianbot-api`)** | Index PDFs, sync sheet; **won-bot** webhook handlers (via Ingress). |
+| **GKE (`wonbot-api`)** | Index PDFs, sync sheet; **won-bot** webhook handlers (via Ingress). |
 | **AlloyDB** | PostgreSQL-compatible **Indexed DB** for Q&A and payment totals. |
 | **Vertex AI Gemini** | Extract contract fields; write answers from Indexed DB only. |
 
@@ -234,7 +233,7 @@ Access control: allowlisted Slack user IDs for **won-bot**. Others may still get
        v
   Apps Script ----alert----> ian-bot (existing webhook)
        |
-       +---- POST /ingest ---> GKE (ianbot-api) + Gemini ---> AlloyDB
+       +---- POST /ingest ---> GKE (wonbot-api) + Gemini ---> AlloyDB
 
   Finance Sheet (+ contract_ref)
        |
@@ -287,7 +286,7 @@ Ship order follows the **bot launch ladder** (A→E in [bot/README.md](bot/READM
 - [x] **Drive file ID** as stable contract key; local dev setup (Docker Compose, `scripts/wipe-local-db.sh`, `docs/DEV.md`).
 - [ ] Populate **aliases** for golden questions; verify retrieval on 2–3 real contracts.
 
-**Phase 2 — Ingest on `ianbot-api`**
+**Phase 2 — Ingest on `wonbot-api`**
 
 - [x] `GET /health`, `POST /ingest`, `POST /sync/sheet` (sheet endpoint stub).
 - [x] Drive download (SA / ADC); PDF only; idempotent contract upsert.
@@ -398,7 +397,7 @@ Ship order follows the **bot launch ladder** (A→E in [bot/README.md](bot/READM
 | ian-bot (Slack app — Drive alerts) | |
 | won-bot (Slack app — Q&A + linking) | |
 | GCP project | |
-| Ingress URL (ianbot-api) | |
+| Ingress URL (wonbot-api) | |
 | AlloyDB instance | |
 | GKE cluster / namespace | |
 
@@ -408,7 +407,7 @@ Ship order follows the **bot launch ladder** (A→E in [bot/README.md](bot/READM
 
 ```text
 bot/           # won-bot Slack webhooks; Telegram adapter for local debug only
-ingest/        # FastAPI app (ianbot-api): /health, /ingest, /sync/sheet
+ingest/        # FastAPI app (wonbot-api): /health, /ingest, /sync/sheet
 core/          # config, auth, extract, db
 db/            # schema.sql
 docs/          # DEV.md, apps-script notes
@@ -487,6 +486,6 @@ After enabling hooks, each `git commit` bumps patch and stages `VERSION`, `pypro
 
 ### v0.0.1
 
-- Initial **ianbot-api** scaffold: FastAPI (`/health`, `/ingest`, `/sync/sheet`), stub Gemini extraction, local **Indexed DB** (Postgres schema) via Docker Compose.
+- Initial **wonbot-api** scaffold: FastAPI (`/health`, `/ingest`, `/sync/sheet`), stub Gemini extraction, local **Indexed DB** (Postgres schema) via Docker Compose.
 - Docs for DevOps (GKE + AlloyDB), finance (`contract_ref`), legal, and Apps Script ingest poke.
 - API smoke tests; versioning scripts and optional git hook for patch bumps.

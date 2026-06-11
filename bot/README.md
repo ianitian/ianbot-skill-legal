@@ -1,6 +1,6 @@
 # Bot webhooks (`bot/`)
 
-Incoming messages from **Slack** and **Telegram** hit the same `ianbot-api` deployment as ingest. Platform-specific verification and JSON live in **adapters**; contract Q&A, linking, and access control live in **core** and **handlers**.
+Incoming messages from **Slack** and **Telegram** hit the same `wonbot-api` deployment as ingest. Platform-specific verification and JSON live in **adapters**; contract Q&A, linking, and access control live in **core** and **handlers**.
 
 See also the product roadmap in [readme.md](../readme.md) (Phases 2b–4).
 

@@ -19,8 +19,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="ianbot-api",
-    description="Ingest and sync API for ian-bot-legal (contracts + payments catalog).",
+    title="wonbot-api",
+    description="Ingest and sync API for won-bot (contracts + payments catalog).",
     version="0.1.2",
     lifespan=lifespan,
 )

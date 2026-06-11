@@ -2,14 +2,14 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: ianbot
-      POSTGRES_PASSWORD: ianbot
-      POSTGRES_DB: ianbot
+      POSTGRES_USER: wonbot
+      POSTGRES_PASSWORD: wonbot
+      POSTGRES_DB: wonbot
     ports:
       - "5432:5432"
     volumes:
-      - ianbot_pgdata:/var/lib/postgresql/data
+      - wonbot_pgdata:/var/lib/postgresql/data
       - ./db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
 
 volumes:
-  ianbot_pgdata:
+  wonbot_pgdata:

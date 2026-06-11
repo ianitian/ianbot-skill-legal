@@ -10,7 +10,7 @@ VERSION_FILE = ROOT / "VERSION"
 PYPROJECT = ROOT / "pyproject.toml"
 API_PY = ROOT / "ingest" / "api.py"
 README = ROOT / "readme.md"
-README_TITLE_RE = re.compile(r"^# ianbot-skill-legal(?: v[\d.]+)?\s*$", re.MULTILINE)
+README_TITLE_RE = re.compile(r"^# exp-wonbot-fuzzy-vertex(?: v[\d.]+)?\s*$", re.MULTILINE)
 
 
 def read_version() -> str:
@@ -64,5 +64,5 @@ def write_version(version: str) -> None:
     API_PY.write_text(api_py, encoding="utf-8")
 
     readme = README.read_text(encoding="utf-8")
-    readme = README_TITLE_RE.sub(f"# ianbot-skill-legal v{version}", readme, count=1)
+    readme = README_TITLE_RE.sub(f"# exp-wonbot-fuzzy-vertex v{version}", readme, count=1)
     README.write_text(readme, encoding="utf-8")

@@ -18,7 +18,7 @@ def format_about_reply() -> str:
     faq_status = "on" if settings.bot_faq_enabled else "off"
     return (
         "won-bot — legal Q&A bot (dev)\n"
-        f"ianbot-api v{version}\n"
+        f"wonbot-api v{version}\n"
         "\n"
         "Echo commands (exact):\n"
         "  ping, /ping          → pong\n"

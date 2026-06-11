@@ -4,7 +4,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-echo "==> Stopping Postgres and removing volume (ianbot_pgdata)..."
+echo "==> Stopping Postgres and removing volume (wonbot_pgdata)..."
 docker compose down -v
 
 echo "==> Starting fresh Postgres..."
@@ -13,7 +13,7 @@ docker compose up -d postgres
 echo "==> Waiting for Postgres..."
 ready=0
 for _ in $(seq 1 30); do
-  if docker compose exec -T postgres pg_isready -U ianbot -d ianbot >/dev/null 2>&1; then
+  if docker compose exec -T postgres pg_isready -U wonbot -d wonbot >/dev/null 2>&1; then
     ready=1
     break
   fi
@@ -26,7 +26,7 @@ if [[ "$ready" -ne 1 ]]; then
 fi
 
 echo "==> Table row counts (should all be 0):"
-docker compose exec -T postgres psql -U ianbot -d ianbot -c "
+docker compose exec -T postgres psql -U wonbot -d wonbot -c "
 SELECT 'contracts' AS table_name, COUNT(*)::int AS rows FROM contracts
 UNION ALL SELECT 'payments', COUNT(*)::int FROM payments
 UNION ALL SELECT 'aliases', COUNT(*)::int FROM aliases

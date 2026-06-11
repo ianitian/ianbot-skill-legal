@@ -240,7 +240,7 @@ def test_telegram_unknown_command_returns_about_fallback(monkeypatch):
         client.post(f"/webhooks/telegram/{_TEST_TELEGRAM_WEBHOOK_SECRET}", content=body)
         reply = mock_send.call_args[0][2]
         assert reply.handler == "fallback"
-        assert "ianbot-api v" in reply.text
+        assert "wonbot-api v" in reply.text
         assert "Indexed DB based Q&A: not enabled" in reply.text
     _clear_caches()
 
@@ -495,6 +495,6 @@ def test_telegram_unknown_still_fallback_when_faq_disabled(monkeypatch):
         client.post(f"/webhooks/telegram/{_TEST_TELEGRAM_WEBHOOK_SECRET}", content=body)
         reply = mock_send.call_args[0][2]
         assert reply.handler == "fallback"
-        assert "ianbot-api v" in reply.text
+        assert "wonbot-api v" in reply.text
         assert "Indexed DB based Q&A: not enabled" in reply.text
     _clear_caches()
