@@ -35,6 +35,10 @@ def health() -> dict:
         "bot_faq_enabled": settings.bot_faq_enabled,
         "bot_faq_configured": settings.bot_faq_configured,
         "bot_faq_count": settings.bot_faq_count,
+        "bot_debug_enabled": settings.bot_debug_enabled,
+        "bot_debug_telegram_configured": settings.bot_debug_telegram_configured,
+        "bot_debug_slack_channel_configured": settings.bot_debug_slack_channel_configured,
+        "bot_debug_slack_thread_available": settings.bot_debug_slack_thread_available,
         "bot_telegram_use_polling": settings.bot_telegram_use_polling,
         "bot_telegram_polling_active": _telegram_polling_active(settings),
     }

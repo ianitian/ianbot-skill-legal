@@ -6,11 +6,7 @@ from fastapi.responses import JSONResponse
 
 from bot.adapters import slack as slack_adapter
 from bot.adapters import telegram as telegram_adapter
-from bot.handlers.dispatch import dispatch_message
-from bot.idempotency import try_record_event
-from bot.outbound.slack_client import send_slack_reply
-from bot.outbound.telegram_client import send_telegram_reply
-from bot.schemas import BotEvent, BotReply
+from bot.delivery import process_inbound_message
 from core.config import Settings, get_settings
 
 logger = logging.getLogger(__name__)
@@ -24,23 +20,6 @@ def _slack_enabled(settings: Settings) -> bool:
 
 def _telegram_enabled(settings: Settings) -> bool:
     return "telegram" in settings.bot_platforms_enabled
-
-
-def _process_message(settings: Settings, event: BotEvent) -> None:
-    if not try_record_event(event.platform, event.event_id):
-        return
-
-    if event.forced_reply:
-        reply = BotReply(text=event.forced_reply)
-    else:
-        reply = dispatch_message(settings, event)
-        if reply is None:
-            return
-
-    if event.platform == "slack":
-        send_slack_reply(settings, event, reply)
-    elif event.platform == "telegram":
-        send_telegram_reply(settings, event, reply)
 
 
 @router.post("/slack/events")
@@ -65,7 +44,7 @@ async def slack_events(request: Request) -> Response:
         return JSONResponse({"challenge": event.challenge})
 
     if event.event_type == "message":
-        _process_message(settings, event)
+        process_inbound_message(settings, event)
 
     return Response(status_code=200)
 
@@ -117,6 +96,6 @@ async def telegram_webhook(webhook_secret: str, request: Request) -> Response:
         return Response(status_code=200)
 
     if event.event_type == "message":
-        _process_message(settings, event)
+        process_inbound_message(settings, event)
 
     return Response(status_code=200)

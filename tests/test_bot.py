@@ -24,6 +24,7 @@ _TEST_TG_BOT_USERNAME = "testbot"
 
 def _clear_caches() -> None:
     os.environ["INGEST_SECRET"] = "test-secret"
+    os.environ["DATABASE_URL"] = ""
     get_settings.cache_clear()
     clear_memory_seen()
 
@@ -94,6 +95,7 @@ def test_health_includes_bot_fields():
     assert "bot_slack_configured" in data
     assert "bot_telegram_configured" in data
     assert "telegram_group_gating_configured" in data
+    assert "bot_debug_enabled" in data
     assert isinstance(data["bot_platforms"], list)
 
 
@@ -129,7 +131,7 @@ def test_slack_message_echo(monkeypatch):
         },
     }
     body = json.dumps(payload).encode()
-    with patch("bot.router.send_slack_reply") as mock_send:
+    with patch("bot.delivery.send_slack_reply") as mock_send:
         response = client.post(
             "/webhooks/slack/events", content=body, headers=_slack_headers(body)
         )
@@ -154,7 +156,7 @@ def test_slack_ping_returns_pong(monkeypatch):
         },
     }
     body = json.dumps(payload).encode()
-    with patch("bot.router.send_slack_reply") as mock_send:
+    with patch("bot.delivery.send_slack_reply") as mock_send:
         response = client.post(
             "/webhooks/slack/events", content=body, headers=_slack_headers(body)
         )
@@ -179,7 +181,7 @@ def test_slack_duplicate_event_id_skips_outbound(monkeypatch):
     }
     body = json.dumps(payload).encode()
     headers = _slack_headers(body)
-    with patch("bot.router.send_slack_reply") as mock_send:
+    with patch("bot.delivery.send_slack_reply") as mock_send:
         client.post("/webhooks/slack/events", content=body, headers=headers)
         client.post("/webhooks/slack/events", content=body, headers=headers)
         assert mock_send.call_count == 1
@@ -222,7 +224,7 @@ def test_telegram_wrong_secret_returns_404(monkeypatch):
 def test_telegram_echo_with_mention(monkeypatch):
     _enable_telegram(monkeypatch)
     body = json.dumps(_telegram_group_payload("hello")).encode()
-    with patch("bot.router.send_telegram_reply") as mock_send:
+    with patch("bot.delivery.send_telegram_reply") as mock_send:
         response = client.post(
             f"/webhooks/telegram/{_TEST_TELEGRAM_WEBHOOK_SECRET}", content=body
         )
@@ -236,7 +238,7 @@ def test_telegram_echo_with_mention(monkeypatch):
 def test_telegram_unknown_command_returns_about_fallback(monkeypatch):
     _enable_telegram(monkeypatch)
     body = json.dumps(_telegram_group_payload("what is a contract?", update_id=44)).encode()
-    with patch("bot.router.send_telegram_reply") as mock_send:
+    with patch("bot.delivery.send_telegram_reply") as mock_send:
         client.post(f"/webhooks/telegram/{_TEST_TELEGRAM_WEBHOOK_SECRET}", content=body)
         reply = mock_send.call_args[0][2]
         assert reply.handler == "fallback"
@@ -248,7 +250,7 @@ def test_telegram_unknown_command_returns_about_fallback(monkeypatch):
 def test_telegram_ping_returns_pong(monkeypatch):
     _enable_telegram(monkeypatch)
     body = json.dumps(_telegram_group_payload("ping", update_id=43)).encode()
-    with patch("bot.router.send_telegram_reply") as mock_send:
+    with patch("bot.delivery.send_telegram_reply") as mock_send:
         client.post(f"/webhooks/telegram/{_TEST_TELEGRAM_WEBHOOK_SECRET}", content=body)
         reply = mock_send.call_args[0][2]
         assert reply.text == "pong"
@@ -260,7 +262,7 @@ def test_telegram_private_chat_redirects_to_group(monkeypatch):
     payload = _telegram_group_payload("hello", update_id=45)
     payload["message"]["chat"] = {"id": 12345, "type": "private"}
     body = json.dumps(payload).encode()
-    with patch("bot.router.send_telegram_reply") as mock_send:
+    with patch("bot.delivery.send_telegram_reply") as mock_send:
         client.post(f"/webhooks/telegram/{_TEST_TELEGRAM_WEBHOOK_SECRET}", content=body)
         mock_send.assert_called_once()
         reply = mock_send.call_args[0][2]
@@ -271,7 +273,7 @@ def test_telegram_private_chat_redirects_to_group(monkeypatch):
 def test_telegram_non_allowlisted_group_ignored(monkeypatch):
     _enable_telegram(monkeypatch)
     body = json.dumps(_telegram_group_payload("hello", update_id=46, chat_id="-100000")).encode()
-    with patch("bot.router.send_telegram_reply") as mock_send:
+    with patch("bot.delivery.send_telegram_reply") as mock_send:
         client.post(f"/webhooks/telegram/{_TEST_TELEGRAM_WEBHOOK_SECRET}", content=body)
         mock_send.assert_not_called()
     _clear_caches()
@@ -289,7 +291,7 @@ def test_telegram_group_without_mention_ignored(monkeypatch):
             },
         }
     ).encode()
-    with patch("bot.router.send_telegram_reply") as mock_send:
+    with patch("bot.delivery.send_telegram_reply") as mock_send:
         client.post(f"/webhooks/telegram/{_TEST_TELEGRAM_WEBHOOK_SECRET}", content=body)
         mock_send.assert_not_called()
     _clear_caches()
@@ -297,10 +299,9 @@ def test_telegram_group_without_mention_ignored(monkeypatch):
 
 def test_telegram_duplicate_update_id_skips_outbound(monkeypatch):
     _enable_telegram(monkeypatch)
-    monkeypatch.delenv("DATABASE_URL", raising=False)
     _clear_caches()
     body = json.dumps(_telegram_group_payload("hi", update_id=100)).encode()
-    with patch("bot.router.send_telegram_reply") as mock_send:
+    with patch("bot.delivery.send_telegram_reply") as mock_send:
         client.post(f"/webhooks/telegram/{_TEST_TELEGRAM_WEBHOOK_SECRET}", content=body)
         client.post(f"/webhooks/telegram/{_TEST_TELEGRAM_WEBHOOK_SECRET}", content=body)
         assert mock_send.call_count == 1
@@ -320,7 +321,7 @@ def test_telegram_ping_bot_command(monkeypatch):
             },
         }
     ).encode()
-    with patch("bot.router.send_telegram_reply") as mock_send:
+    with patch("bot.delivery.send_telegram_reply") as mock_send:
         client.post(f"/webhooks/telegram/{_TEST_TELEGRAM_WEBHOOK_SECRET}", content=body)
         mock_send.assert_called_once()
         reply = mock_send.call_args[0][2]
@@ -349,7 +350,7 @@ def test_telegram_text_mention_hello(monkeypatch):
             },
         }
     ).encode()
-    with patch("bot.router.send_telegram_reply") as mock_send:
+    with patch("bot.delivery.send_telegram_reply") as mock_send:
         client.post(f"/webhooks/telegram/{_TEST_TELEGRAM_WEBHOOK_SECRET}", content=body)
         mock_send.assert_called_once()
         reply = mock_send.call_args[0][2]
@@ -476,7 +477,7 @@ def test_telegram_faq_match_when_enabled(monkeypatch):
     monkeypatch.setenv("BOT_FAQ_ENABLED", "true")
     _clear_caches()
     body = json.dumps(_telegram_group_payload("what can you do", update_id=50)).encode()
-    with patch("bot.router.send_telegram_reply") as mock_send:
+    with patch("bot.delivery.send_telegram_reply") as mock_send:
         client.post(f"/webhooks/telegram/{_TEST_TELEGRAM_WEBHOOK_SECRET}", content=body)
         mock_send.assert_called_once()
         reply = mock_send.call_args[0][2]
@@ -491,7 +492,7 @@ def test_telegram_unknown_still_fallback_when_faq_disabled(monkeypatch):
     monkeypatch.setenv("BOT_FAQ_ENABLED", "false")
     _clear_caches()
     body = json.dumps(_telegram_group_payload("what can you do", update_id=51)).encode()
-    with patch("bot.router.send_telegram_reply") as mock_send:
+    with patch("bot.delivery.send_telegram_reply") as mock_send:
         client.post(f"/webhooks/telegram/{_TEST_TELEGRAM_WEBHOOK_SECRET}", content=body)
         reply = mock_send.call_args[0][2]
         assert reply.handler == "fallback"

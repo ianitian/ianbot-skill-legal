@@ -1,4 +1,4 @@
-# exp-wonbot-fuzzy-vertex v0.1.1
+# exp-wonbot-fuzzy-vertex v0.1.3
 **Base document** for product, engineering, DevOps, finance, and legal. Describes what we plan to build, how pieces connect, and what each group needs to decide or provide.
 
 This repo powers **won-bot**—a new internal **Slack** bot for legal Q&A, payment linking, and related workflows. It is separate from the existing **ian-bot** Slack app (Drive alerts only). A **Telegram** adapter exists in the codebase for **local debugging only**; it is not part of the production UI.

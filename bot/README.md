@@ -28,7 +28,7 @@ Each step is deployable behind the same Ingress URLs. Later steps add handler de
 |------|------------|---------------|-----------------|
 | **A1** ✅ | Webhook verify + echo | Dev / smoke test | Bot echoes or replies `pong` |
 | **A1.5** ✅ | FAQ layer (rapidfuzz + YAML) | Dev / smoke test | Scripted answers for common questions; env-toggled |
-| **A1.6** | Counsel observer feed | Dev then prod | Audit stream of handled questions (documented; not shipped) |
+| **A1.6** (partial) ✅ | Multi-sink debug | Dev | Optional debug message: handler + fuzzy top-3 (`BOT_DEBUG_ENABLED`) |
 | **A2** | Vertex conversational chat (no DB) | Small internal test | Back-and-forth NLP; system prompt says catalog not connected yet |
 | **A3** | Allowlist + audit log | Allowlisted users only | Strangers get a polite access-denied message |
 | **B1** | Indexed DB based Q&A (Postgres + citations) | Allowlisted users | Answers grounded in ingested PDFs; “not found” when empty |
@@ -67,9 +67,11 @@ Slack / Telegram
        └── handlers/link_payment.py (C+)
        │
        ▼ BotReply (+ handler metadata)
-  bot/outbound/*     platform API or sync response body
+  bot/delivery.py    user reply → outbound; optional bot/debug.py second message
        │
-       └── observers/* (A1.6 planned) counsel audit stream
+       ▼ bot/outbound/*     platform API
+       │
+       └── observers/* (A1.6 remainder) counsel audit stream
 ```
 
 Slack Events and interactivity must **ack within ~3s**. Return `200` immediately when work is slow; call `chat.postMessage` or `response_url` afterward.

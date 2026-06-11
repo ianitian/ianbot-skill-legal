@@ -68,6 +68,31 @@ class FaqCatalog:
             answer=candidate.answer,
         )
 
+    def match_top_candidates(self, text: str, limit: int = 3) -> list[FaqMatch]:
+        normalized = (text or "").strip().lower()
+        if not normalized or limit < 1:
+            return []
+
+        best_by_id: dict[str, FaqMatch] = {}
+        for candidate in self._candidates:
+            score = int(fuzz.token_sort_ratio(normalized, candidate.phrase))
+            existing = best_by_id.get(candidate.faq_id)
+            if existing is not None and existing.score >= score:
+                continue
+            best_by_id[candidate.faq_id] = FaqMatch(
+                faq_id=candidate.faq_id,
+                canonical_question=candidate.canonical_question,
+                score=score,
+                answer=candidate.answer,
+            )
+
+        ranked = sorted(
+            best_by_id.values(),
+            key=lambda match: (match.score, match.faq_id),
+            reverse=True,
+        )
+        return ranked[:limit]
+
 
 _catalog_cache: dict[str, tuple[int, FaqCatalog]] = {}
 

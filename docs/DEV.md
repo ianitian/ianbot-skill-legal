@@ -147,7 +147,7 @@ TELEGRAM_ALLOWED_CHAT_IDS=-1001234567890
 TELEGRAM_BOT_USERNAME=legallywon_bot
 ```
 
-`GET /health` reports `bot_platforms`, `bot_slack_configured`, `bot_telegram_configured`, `telegram_group_gating_configured`, and FAQ fields (`bot_faq_enabled`, `bot_faq_configured`, `bot_faq_count`).
+`GET /health` reports `bot_platforms`, `bot_slack_configured`, `bot_telegram_configured`, `telegram_group_gating_configured`, FAQ fields (`bot_faq_enabled`, `bot_faq_configured`, `bot_faq_count`), and debug fields (`bot_debug_enabled`, `bot_debug_telegram_configured`, `bot_debug_slack_channel_configured`, `bot_debug_slack_thread_available`).
 
 **Telegram group gating:** DMs are ignored. Only `group` / `supergroup` chats listed in `TELEGRAM_ALLOWED_CHAT_IDS` are handled, and the message must **@mention** the bot (`TELEGRAM_BOT_USERNAME`). To discover a group chat id: `@mention` the bot once, then check server logs for `non-allowlisted chat_id=...` and add that id to `.env`.
 
@@ -177,7 +177,15 @@ Edit `bot/content/faqs.yaml` to add FAQs (`id`, `question`, `triggers`, `answer`
 
 With FAQ enabled, `@legallywon_bot what can you do` should match the `capabilities` entry (disclaimer prefix + answer). Unknown questions get the same build summary as `about` (handler `fallback`) until A2 (Vertex) and B1 (Indexed DB based Q&A).
 
-Counsel observer feed (A1.6) is documented in [bot/README.md](../bot/README.md) — dev uses one Telegram bot; live will split Q&A bot vs ian-bot audit to Slack.
+### Bot debug (A1.6 partial)
+
+Optional second message with handler name and rapidfuzz stats (user-facing reply unchanged):
+
+```bash
+BOT_DEBUG_ENABLED=true
+TELEGRAM_DEBUG_CHAT_ID=          # your Telegram user or dev group id
+SLACK_DEBUG_CHANNEL_ID=          # set to post debug to a channel; leave empty for in-thread on Slack events
+```
 
 **Telegram local dev — polling vs webhook:** ngrok often fails to receive Telegram webhook traffic (`91.108.x.x` never hits uvicorn). Use long-polling instead:
 

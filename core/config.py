@@ -37,7 +37,17 @@ class Settings(BaseSettings):
     bot_faq_enabled: bool = False
     bot_faq_path: str = "bot/content/faqs.yaml"
     bot_faq_min_score: int = 80
+    bot_debug_enabled: bool = False
+    telegram_debug_chat_id: Optional[str] = None
+    slack_debug_channel_id: Optional[str] = None
     bot_telegram_use_polling: bool = False
+
+    @field_validator("bot_debug_enabled", mode="before")
+    @classmethod
+    def _parse_bot_debug_enabled(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip().lower() in {"yes", "true", "1"}
+        return value
 
     @field_validator("bot_telegram_use_polling", mode="before")
     @classmethod
@@ -153,6 +163,22 @@ class Settings(BaseSettings):
     @property
     def bot_faq_configured(self) -> bool:
         return self.bot_faq_enabled and self.bot_faq_count > 0
+
+    @property
+    def bot_debug_telegram_configured(self) -> bool:
+        return bool(self.telegram_debug_chat_id and self.telegram_debug_chat_id.strip())
+
+    @property
+    def bot_debug_slack_channel_configured(self) -> bool:
+        return bool(self.slack_debug_channel_id and self.slack_debug_channel_id.strip())
+
+    @property
+    def bot_debug_slack_thread_available(self) -> bool:
+        return (
+            self.bot_debug_enabled
+            and self.bot_slack_configured
+            and not self.bot_debug_slack_channel_configured
+        )
 
 
 @lru_cache

@@ -6,30 +6,13 @@ from typing import Optional
 import httpx
 
 from bot.adapters import telegram as telegram_adapter
-from bot.handlers.dispatch import dispatch_message
-from bot.idempotency import try_record_event
-from bot.outbound.telegram_client import send_telegram_reply
-from bot.schemas import BotEvent, BotReply
+from bot.delivery import process_inbound_message
 from core.config import Settings, get_settings
 
 logger = logging.getLogger(__name__)
 
 _poll_task: Optional[asyncio.Task] = None
 _stop_event: Optional[asyncio.Event] = None
-
-
-def _process_message(settings: Settings, event: BotEvent) -> None:
-    if not try_record_event(event.platform, event.event_id):
-        return
-
-    if event.forced_reply:
-        reply = BotReply(text=event.forced_reply)
-    else:
-        reply = dispatch_message(settings, event)
-        if reply is None:
-            return
-
-    send_telegram_reply(settings, event, reply)
 
 
 def process_telegram_update(settings: Settings, body: bytes) -> bool:
@@ -58,7 +41,7 @@ def process_telegram_update(settings: Settings, body: bytes) -> bool:
         return False
 
     if event.event_type == "message":
-        _process_message(settings, event)
+        process_inbound_message(settings, event)
         return True
     return False
 
