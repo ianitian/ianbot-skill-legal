@@ -41,11 +41,18 @@ def emit_debug(settings: Settings, event: BotEvent, text: str) -> None:
     if not settings.bot_debug_enabled:
         return
 
-    debug_chat_id = (settings.telegram_debug_chat_id or "").strip()
-    if debug_chat_id:
-        send_telegram_text(settings, debug_chat_id, text)
+    if event.platform == "telegram":
+        debug_chat_id = (settings.telegram_debug_chat_id or "").strip()
+        if debug_chat_id:
+            logger.info("Emitting Telegram debug to chat_id=%s", debug_chat_id)
+            send_telegram_text(settings, debug_chat_id, text)
+        return
+
+    if event.platform != "slack":
+        return
 
     if not settings.bot_slack_configured:
+        logger.warning("Slack debug skipped: SLACK_BOT_TOKEN not configured")
         return
 
     debug_channel = (settings.slack_debug_channel_id or "").strip()
@@ -53,8 +60,6 @@ def emit_debug(settings: Settings, event: BotEvent, text: str) -> None:
         post_slack_message(settings, debug_channel, text)
         return
 
-    if event.platform != "slack":
-        return
     if not event.chat_id or not event.thread_id:
         logger.warning("Slack thread debug skipped: missing channel or thread_id")
         return

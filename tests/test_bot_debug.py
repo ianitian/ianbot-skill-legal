@@ -24,14 +24,17 @@ def _clear_caches() -> None:
 def _settings(**overrides: object) -> Settings:
     return Settings(
         ingest_secret="test-secret",
+        database_url="",
         bot_platforms="slack,telegram",
         slack_signing_secret="test-signing-secret",
-        slack_bot_token="xoxb-test",
+        slack_bot_token=overrides.pop("slack_bot_token", "xoxb-test"),
         telegram_bot_token="123:ABC",
         bot_faq_enabled=overrides.pop("bot_faq_enabled", True),
         bot_faq_path=overrides.pop("bot_faq_path", "bot/content/faqs.yaml"),
         bot_faq_min_score=overrides.pop("bot_faq_min_score", 80),
         bot_debug_enabled=overrides.pop("bot_debug_enabled", True),
+        telegram_debug_chat_id=overrides.pop("telegram_debug_chat_id", ""),
+        slack_debug_channel_id=overrides.pop("slack_debug_channel_id", ""),
         **overrides,
     )
 
@@ -74,7 +77,7 @@ def test_format_debug_message_includes_faq_hit():
 
 
 def test_emit_debug_telegram_only(monkeypatch: pytest.MonkeyPatch):
-    settings = _settings(telegram_debug_chat_id="12345", slack_debug_channel_id="")
+    settings = _settings(telegram_debug_chat_id="12345")
     event = _event(platform="telegram")
 
     with patch("bot.debug.send_telegram_text") as mock_tg, patch(
@@ -106,6 +109,33 @@ def test_emit_debug_slack_thread_when_channel_empty():
         mock_slack.assert_called_once_with(
             settings, "C1", "debug body", thread_ts="123.456"
         )
+
+
+def test_emit_debug_slack_event_does_not_use_telegram_sink():
+    settings = _settings(
+        telegram_debug_chat_id="-10099",
+        slack_debug_channel_id="C_DEBUG",
+    )
+    event = _event(platform="slack", chat_id="C1", thread_id="123.456")
+
+    with patch("bot.debug.send_telegram_text") as mock_tg, patch(
+        "bot.debug.post_slack_message"
+    ) as mock_slack:
+        emit_debug(settings, event, "debug body")
+        mock_tg.assert_not_called()
+        mock_slack.assert_called_once_with(settings, "C_DEBUG", "debug body")
+
+
+def test_emit_debug_slack_skipped_when_slack_not_configured():
+    settings = _settings(slack_bot_token="", telegram_debug_chat_id="-10099")
+    event = _event(platform="slack", chat_id="C1", thread_id="123.456")
+
+    with patch("bot.debug.send_telegram_text") as mock_tg, patch(
+        "bot.debug.post_slack_message"
+    ) as mock_slack:
+        emit_debug(settings, event, "debug body")
+        mock_tg.assert_not_called()
+        mock_slack.assert_not_called()
 
 
 def test_deliver_bot_reply_skips_debug_when_disabled():

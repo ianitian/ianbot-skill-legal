@@ -183,9 +183,11 @@ Optional second message with handler name and rapidfuzz stats (user-facing reply
 
 ```bash
 BOT_DEBUG_ENABLED=true
-TELEGRAM_DEBUG_CHAT_ID=          # your Telegram user or dev group id
-SLACK_DEBUG_CHANNEL_ID=          # set to post debug to a channel; leave empty for in-thread on Slack events
+TELEGRAM_DEBUG_CHAT_ID=          # debug for Telegram events only
+SLACK_DEBUG_CHANNEL_ID=          # debug for Slack events only; leave empty for in-thread
 ```
+
+Each sink only receives debug for its own platform (Telegram debug is not a unified feed for Slack traffic).
 
 **Telegram local dev — polling vs webhook:** ngrok often fails to receive Telegram webhook traffic (`91.108.x.x` never hits uvicorn). Use long-polling instead:
 

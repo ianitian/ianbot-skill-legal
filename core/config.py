@@ -1,4 +1,3 @@
-from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
@@ -181,6 +180,12 @@ class Settings(BaseSettings):
         )
 
 
-@lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+def clear_settings_cache() -> None:
+    """No-op kept for tests that called get_settings.cache_clear()."""
+
+
+get_settings.cache_clear = clear_settings_cache  # type: ignore[attr-defined]

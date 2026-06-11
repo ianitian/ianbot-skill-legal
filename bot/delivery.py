@@ -4,7 +4,7 @@ from bot.idempotency import try_record_event
 from bot.outbound.slack_client import send_slack_reply
 from bot.outbound.telegram_client import send_telegram_reply
 from bot.schemas import BotEvent, BotReply
-from core.config import Settings
+from core.config import Settings, get_settings
 
 
 def deliver_bot_reply(settings: Settings, event: BotEvent, reply: BotReply) -> None:
@@ -18,6 +18,7 @@ def deliver_bot_reply(settings: Settings, event: BotEvent, reply: BotReply) -> N
 
 
 def process_inbound_message(settings: Settings, event: BotEvent) -> None:
+    settings = get_settings()
     if not try_record_event(event.platform, event.event_id):
         return
 

@@ -25,6 +25,8 @@ _TEST_TG_BOT_USERNAME = "testbot"
 def _clear_caches() -> None:
     os.environ["INGEST_SECRET"] = "test-secret"
     os.environ["DATABASE_URL"] = ""
+    os.environ["BOT_DEBUG_ENABLED"] = "false"
+    os.environ["TELEGRAM_DEBUG_CHAT_ID"] = ""
     get_settings.cache_clear()
     clear_memory_seen()
 

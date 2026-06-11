@@ -15,8 +15,9 @@ _poll_task: Optional[asyncio.Task] = None
 _stop_event: Optional[asyncio.Event] = None
 
 
-def process_telegram_update(settings: Settings, body: bytes) -> bool:
+def process_telegram_update(body: bytes) -> bool:
     """Parse and handle one Telegram update JSON. Return True if handled."""
+    settings = get_settings()
     try:
         data = json.loads(body.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError):
@@ -47,8 +48,7 @@ def process_telegram_update(settings: Settings, body: bytes) -> bool:
 
 
 async def _poll_loop(stop_event: asyncio.Event) -> None:
-    settings = get_settings()
-    token = (settings.telegram_bot_token or "").strip()
+    token = (get_settings().telegram_bot_token or "").strip()
     if not token:
         logger.warning("BOT_TELEGRAM_USE_POLLING set but TELEGRAM_BOT_TOKEN missing")
         return
@@ -93,7 +93,7 @@ async def _poll_loop(stop_event: asyncio.Event) -> None:
             update_id = int(update.get("update_id") or 0)
             offset = update_id + 1
             body = json.dumps(update).encode("utf-8")
-            await asyncio.to_thread(process_telegram_update, settings, body)
+            await asyncio.to_thread(process_telegram_update, body)
 
         await asyncio.sleep(0.1)
 
